@@ -24,10 +24,7 @@ export interface KuzuGraphOptions {
  */
 export class KuzuKnowledgeGraph implements KnowledgeGraph {
   private queryEngine: KuzuQueryEngine;
-<<<<<<< HEAD
-=======
   private options: KuzuGraphOptions;
->>>>>>> f8ce76cfe1df1b6682e8f921e51c532978b30f84
   private pendingNodes: GraphNode[] = [];
   private pendingRelationships: GraphRelationship[] = [];
   private nodeCache: Map<string, GraphNode> = new Map();
@@ -38,6 +35,7 @@ export class KuzuKnowledgeGraph implements KnowledgeGraph {
 
   constructor(queryEngine: KuzuQueryEngine, options: KuzuGraphOptions = {}) {
     this.queryEngine = queryEngine;
+    this.options = options;
     this.cacheEnabled = options.enableCache ?? true;
     this.batchSize = options.batchSize ?? 100;
     this.autoCommit = options.autoCommit ?? true;
@@ -56,16 +54,24 @@ export class KuzuKnowledgeGraph implements KnowledgeGraph {
   }
 
   /**
-   * Flush pending nodes to KuzuDB
+   * Flush pending nodes to KuzuDB using batch operations
    */
   private async flushNodes(): Promise<void> {
     if (this.pendingNodes.length === 0) return;
 
     try {
-      for (const node of this.pendingNodes) {
-        await this.commitSingleNode(node);
+      console.log(`🚀 BATCH: Starting batch commit of ${this.pendingNodes.length} nodes`);
+      
+      // Group nodes by label for batch processing
+      const nodesByLabel = this.groupNodesByLabel(this.pendingNodes);
+      
+      // Process each label as a batch
+      for (const [label, nodes] of Object.entries(nodesByLabel)) {
+        await this.commitNodesBatch(label, nodes);
       }
+      
       this.pendingNodes = [];
+      console.log(`✅ BATCH: Successfully committed all nodes in batches`);
     } catch (error) {
       console.error('Failed to flush nodes to KuzuDB:', error);
       throw error;
@@ -75,11 +81,7 @@ export class KuzuKnowledgeGraph implements KnowledgeGraph {
   /**
    * Commit a single node with auto-recovery for missing tables
    */
-<<<<<<< HEAD
   public async commitSingleNode(node: GraphNode): Promise<void> {
-=======
-  private async commitSingleNode(node: GraphNode): Promise<void> {
->>>>>>> f8ce76cfe1df1b6682e8f921e51c532978b30f84
     try {
       const tableName = node.label;
       
@@ -110,16 +112,24 @@ export class KuzuKnowledgeGraph implements KnowledgeGraph {
   }
 
   /**
-   * Flush pending relationships to KuzuDB
+   * Flush pending relationships to KuzuDB using batch operations
    */
   private async flushRelationships(): Promise<void> {
     if (this.pendingRelationships.length === 0) return;
 
     try {
-      for (const rel of this.pendingRelationships) {
-        await this.commitSingleRelationship(rel);
+      console.log(`🚀 BATCH: Starting batch commit of ${this.pendingRelationships.length} relationships`);
+      
+      // Group relationships by type for batch processing
+      const relsByType = this.groupRelationshipsByType(this.pendingRelationships);
+      
+      // Process each type as a batch
+      for (const [type, relationships] of Object.entries(relsByType)) {
+        await this.commitRelationshipsBatch(type, relationships);
       }
+      
       this.pendingRelationships = [];
+      console.log(`✅ BATCH: Successfully committed all relationships in batches`);
     } catch (error) {
       console.error('Failed to flush relationships to KuzuDB:', error);
       throw error;
@@ -129,11 +139,7 @@ export class KuzuKnowledgeGraph implements KnowledgeGraph {
   /**
    * Commit a single relationship with auto-recovery for missing tables
    */
-<<<<<<< HEAD
   public async commitSingleRelationship(rel: GraphRelationship): Promise<void> {
-=======
-  private async commitSingleRelationship(rel: GraphRelationship): Promise<void> {
->>>>>>> f8ce76cfe1df1b6682e8f921e51c532978b30f84
     try {
       await this.queryEngine.executeQuery(
         `MATCH (a {id: '${rel.source}'}), (b {id: '${rel.target}'}) MERGE (a)-[:${rel.type} ${this.formatPropertiesForQuery(rel.properties)}]->(b)`
@@ -161,6 +167,106 @@ export class KuzuKnowledgeGraph implements KnowledgeGraph {
         }
       } else {
         throw error;
+      }
+    }
+  }
+
+  /**
+   * Group nodes by label for batch processing
+   */
+  private groupNodesByLabel(nodes: GraphNode[]): Record<string, GraphNode[]> {
+    return nodes.reduce((groups, node) => {
+      if (!groups[node.label]) groups[node.label] = [];
+      groups[node.label].push(node);
+      return groups;
+    }, {} as Record<string, GraphNode[]>);
+  }
+
+  /**
+   * Group relationships by type for batch processing
+   */
+  private groupRelationshipsByType(relationships: GraphRelationship[]): Record<string, GraphRelationship[]> {
+    return relationships.reduce((groups, rel) => {
+      if (!groups[rel.type]) groups[rel.type] = [];
+      groups[rel.type].push(rel);
+      return groups;
+    }, {} as Record<string, GraphRelationship[]>);
+  }
+
+  /**
+   * Commit a batch of nodes of the same label using UNWIND
+   */
+  private async commitNodesBatch(label: string, nodes: GraphNode[]): Promise<void> {
+    if (nodes.length === 0) return;
+    
+    try {
+      console.log(`🔄 BATCH: Committing ${nodes.length} ${label} nodes in single query`);
+      
+      // Build individual MERGE statements for batch execution
+      const mergeStatements = await Promise.all(
+        nodes.map(async (node) => {
+          const filteredProps = await this.filterPropertiesForSchema(node.properties, node.label);
+          const nodeData = { id: node.id, ...filteredProps };
+          return `MERGE (n:${label} ${this.formatPropertiesForQuery(nodeData)})`;
+        })
+      );
+      
+      // Execute all MERGE statements in a single query
+      const batchQuery = mergeStatements.join(';\n');
+      
+      await this.queryEngine.executeQuery(batchQuery);
+      console.log(`✅ BATCH: Successfully committed ${nodes.length} ${label} nodes`);
+      
+    } catch (error) {
+      console.warn(`⚠️ BATCH: Batch commit failed for ${label} nodes, falling back to individual commits:`, error);
+      
+      // Fallback to individual commits if batch fails
+      for (const node of nodes) {
+        try {
+          await this.commitSingleNode(node);
+        } catch (individualError) {
+          console.error(`❌ BATCH: Individual commit also failed for node ${node.id}:`, individualError);
+          throw individualError;
+        }
+      }
+    }
+  }
+
+  /**
+   * Commit a batch of relationships of the same type using UNWIND
+   */
+  private async commitRelationshipsBatch(type: string, relationships: GraphRelationship[]): Promise<void> {
+    if (relationships.length === 0) return;
+    
+    try {
+      console.log(`🔄 BATCH: Committing ${relationships.length} ${type} relationships in single query`);
+      
+      // Build individual MERGE statements for batch execution
+      const mergeStatements = relationships.map(rel => {
+        const props = Object.keys(rel.properties).length > 0 
+          ? this.formatPropertiesForQuery(rel.properties)
+          : '';
+        const propsStr = props ? ` ${props}` : '';
+        return `MATCH (a {id: '${rel.source}'}), (b {id: '${rel.target}'}) MERGE (a)-[:${type}${propsStr}]->(b)`;
+      });
+      
+      // Execute all MERGE statements in a single query
+      const batchQuery = mergeStatements.join(';\n');
+      
+      await this.queryEngine.executeQuery(batchQuery);
+      console.log(`✅ BATCH: Successfully committed ${relationships.length} ${type} relationships`);
+      
+    } catch (error) {
+      console.warn(`⚠️ BATCH: Batch commit failed for ${type} relationships, falling back to individual commits:`, error);
+      
+      // Fallback to individual commits if batch fails
+      for (const rel of relationships) {
+        try {
+          await this.commitSingleRelationship(rel);
+        } catch (individualError) {
+          console.error(`❌ BATCH: Individual commit also failed for relationship ${rel.id}:`, individualError);
+          throw individualError;
+        }
       }
     }
   }

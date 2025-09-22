@@ -21,7 +21,6 @@ export interface FeatureFlags {
   enableKuzuDB: boolean;
   enableKuzuDBPersistence: boolean;
   enableKuzuDBPerformanceMonitoring: boolean;
-  enableKuzuDBDirectWrites: boolean;
   
   // Debug Features
   enableDebugMode: boolean;
@@ -47,7 +46,6 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   enableKuzuDB: false,
   enableKuzuDBPersistence: false,
   enableKuzuDBPerformanceMonitoring: false,
-  enableKuzuDBDirectWrites: false,
   
   // Debug Features
   enableDebugMode: false,
@@ -113,30 +111,6 @@ class FeatureFlagManager {
       console.log('📄 Environment: KuzuDB disabled via VITE_KUZU_ENABLED=false');
     } else {
       console.log(`⚠️ Warning: KuzuDB env var not recognized: "${kuzuEnabled}" - using default: ${flags.enableKuzuDB}`);
-    }
-    
-    // Handle KuzuDB Direct Writes settings
-    let directWritesEnabled: string | undefined;
-    try {
-      if (import.meta && import.meta.env) {
-        directWritesEnabled = import.meta.env.VITE_KUZU_DIRECT_WRITES?.toLowerCase();
-      }
-    } catch (e) {
-      if (typeof process !== 'undefined' && process.env) {
-        directWritesEnabled = process.env.KUZU_DIRECT_WRITES?.toLowerCase();
-      }
-    }
-    
-    console.log(`🔍 Debug: directWritesEnabled from env = "${directWritesEnabled}"`);
-    
-    if (directWritesEnabled === 'true' || directWritesEnabled === '1' || directWritesEnabled === 'yes') {
-      flags.enableKuzuDBDirectWrites = true;
-      console.log('⚡ Environment: KuzuDB direct writes enabled via VITE_KUZU_DIRECT_WRITES=true');
-    } else if (directWritesEnabled === 'false' || directWritesEnabled === '0' || directWritesEnabled === 'no') {
-      flags.enableKuzuDBDirectWrites = false;
-      console.log('🔄 Environment: KuzuDB direct writes disabled via VITE_KUZU_DIRECT_WRITES=false');
-    } else {
-      console.log(`⚠️ Warning: KuzuDB direct writes env var not recognized: "${directWritesEnabled}" - using default: ${flags.enableKuzuDBDirectWrites}`);
     }
     
     // Then, try to load from localStorage (can override environment)
@@ -337,7 +311,6 @@ export const setFeatureFlag = <K extends keyof FeatureFlags>(key: K, value: Feat
 
 export const isKuzuDBEnabled = (): boolean => featureFlags.isKuzuDBEnabled();
 export const isKuzuDBPersistenceEnabled = (): boolean => featureFlags.getFlag('enableKuzuDBPersistence');
-export const isKuzuDBDirectWritesEnabled = (): boolean => featureFlags.getFlag('enableKuzuDBDirectWrites');
 export const isDebugModeEnabled = (): boolean => featureFlags.isDebugModeEnabled();
 export const isPerformanceMonitoringEnabled = (): boolean => featureFlags.isPerformanceMonitoringEnabled();
 export const isWorkerPoolEnabled = (): boolean => featureFlags.getFlag('enableWorkerPool');

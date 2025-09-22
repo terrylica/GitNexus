@@ -4,6 +4,7 @@ import type { LLMService, LLMConfig } from './llm-service.ts';
 import type { CypherGenerator } from './cypher-generator.ts';
 import type { KnowledgeGraph } from '../core/graph/types.ts';
 import type { LocalStorageChatHistory } from '../lib/chat-history.ts';
+import { configLoader } from '../config/config-loader.ts';
 
 export interface ReActContext {
   graph: KnowledgeGraph;
@@ -380,21 +381,26 @@ CRITICAL: The action field must be exactly one of these four values: query_graph
               maxRetries: 3
             });
             
-            // Add LIMIT if not present to prevent JSON truncation issues
+            // Get config once for efficiency
+            const config = await configLoader.loadConfig();
+            
+            // Add LIMIT if not present and limiting is enabled
             let finalCypher = cypherQuery.cypher;
-            if (!finalCypher.toLowerCase().includes('limit')) {
-              finalCypher += ' LIMIT 20';
+            if (config.ai.cypher.enableLimiting && !finalCypher.toLowerCase().includes('limit')) {
+              const defaultLimit = config.ai.cypher.defaultLimit;
+              finalCypher += ` LIMIT ${defaultLimit}`;
             }
             
             // Execute the query
             const results = await this.executeGraphQuery(finalCypher);
             
-            // Truncate large responses to prevent JSON parsing issues
-            if (results.rows && results.rows.length > 20) {
-              results.rows = results.rows.slice(0, 20);
-              results.rowCount = 20;
+            // Truncate large responses if truncation is enabled
+            if (config.ai.cypher.enableTruncation && results.rows && results.rows.length > config.ai.cypher.maxLimit) {
+              const maxLimit = config.ai.cypher.maxLimit;
+              results.rows = results.rows.slice(0, maxLimit);
+              results.rowCount = maxLimit;
               results.truncated = true;
-              results.summary += ' (showing first 20 results)';
+              results.summary += ` (showing first ${maxLimit} results)`;
             }
             
             output = JSON.stringify(results, null, 2);

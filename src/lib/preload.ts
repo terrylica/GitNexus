@@ -10,5 +10,11 @@ import '../core/ingestion/parsing-processor';
 import '../core/ingestion/call-processor';
 import '../core/ingestion/structure-processor';
 import '../core/tree-sitter/parser-loader';
+import { ignoreService } from '../config/ignore-service';
+
+// Initialize ignore service
+ignoreService.initialize().catch(error => {
+  console.warn('Failed to initialize ignore service:', error);
+});
 
 console.log('Dependencies preloaded to prevent runtime optimization'); 

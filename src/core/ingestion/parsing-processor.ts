@@ -7,7 +7,7 @@ import {
   DuplicateDetector,
   BatchProcessor
 } from '../../lib/shared-utils.js';
-import { IGNORE_PATTERNS } from '../../config/language-config.js';
+import { ignoreService } from '../../config/ignore-service.js';
 import Parser from 'web-tree-sitter';
 import { TYPESCRIPT_QUERIES, JAVASCRIPT_QUERIES, PYTHON_QUERIES, JAVA_QUERIES } from './tree-sitter-queries';
 import { initTreeSitter, loadTypeScriptParser, loadPythonParser, loadJavaScriptParser } from '../tree-sitter/parser-loader.js';
@@ -148,54 +148,9 @@ export class ParsingProcessor implements GraphProcessor<ParsingInput> {
 			filtered = filtered.filter(path => extensions.some(ext => path.endsWith(ext)));
 		}
 
-		// Apply ignore patterns (be more selective to avoid over-filtering)
+		// Apply centralized ignore patterns
 		const beforeIgnoreFilter = filtered.length;
-		filtered = filtered.filter(path => {
-			// More precise ignore pattern matching
-			for (const pattern of IGNORE_PATTERNS) {
-				if (typeof pattern === 'string') {
-					// Only ignore if the pattern is a complete directory component
-					if (path.includes(`/${pattern}/`) || 
-						path.startsWith(`${pattern}/`) || 
-						path.endsWith(`/${pattern}`) ||
-						path === pattern) {
-						return false;
-					}
-				}
-			}
-			
-			// Additional filtering for files that shouldn't be in KG
-			const fileName = path.split('/').pop()?.toLowerCase() || '';
-			
-			// Skip documentation and readme files
-			if (fileName.includes('readme') || 
-				fileName.includes('license') ||
-				fileName.includes('changelog') ||
-				fileName.includes('contributing') ||
-				fileName.includes('authors') ||
-				fileName.includes('maintainers')) {
-				return false;
-			}
-			
-			// Skip git and version control files
-			if (fileName.startsWith('.git') || 
-				fileName.includes('.gitignore') ||
-				fileName.includes('.gitattributes')) {
-				return false;
-			}
-			
-			// Skip common non-source files
-			if (fileName.includes('dockerfile') ||
-				fileName.includes('docker-compose') ||
-				fileName.endsWith('.md') ||
-				fileName.endsWith('.txt') ||
-				fileName.endsWith('.log') ||
-				fileName.endsWith('.lock')) {
-				return false;
-			}
-			
-			return true;
-		});
+		filtered = ignoreService.filterPaths(filtered);
 
 		// Apply content filter (only exclude truly empty files)
 		const beforeContentFilter = filtered.length;

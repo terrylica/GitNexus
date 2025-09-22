@@ -1,9 +1,16 @@
 /**
- * Centralized Configuration System
- * Provides type-safe configuration with environment validation and defaults
+ * Legacy Configuration System (DEPRECATED)
+ * 
+ * This file is being replaced by the new centralized config system:
+ * - Root config: gitnexus.config.ts
+ * - Config loader: src/config/config-loader.ts
+ * - Ignore service: src/config/ignore-service.ts
+ * 
+ * TODO: Migrate remaining usage to the new system
  */
 
 import { z } from 'zod';
+import { configLoader, type ValidatedGitNexusConfig } from './config-loader.ts';
 
 // Configuration schemas with validation
 const MemoryConfigSchema = z.object({
@@ -99,16 +106,32 @@ export type ProcessingConfig = z.infer<typeof ProcessingConfigSchema>;
 export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;
 
 /**
- * Configuration service with environment validation
+ * Configuration service with environment validation (LEGACY)
+ * 
+ * This is a compatibility layer that bridges to the new centralized config system.
+ * New code should use configLoader directly.
  */
 export class ConfigService {
   private static instance: ConfigService;
   private config: AppConfig;
   private validationErrors: string[] = [];
+  private newConfig: ValidatedGitNexusConfig | null = null;
 
   private constructor() {
     this.config = this.loadConfiguration();
     this.validateEnvironment();
+    this.loadNewConfig();
+  }
+
+  /**
+   * Load the new centralized configuration
+   */
+  private async loadNewConfig(): Promise<void> {
+    try {
+      this.newConfig = await configLoader.loadConfig();
+    } catch (error) {
+      console.warn('Failed to load new config system, using legacy config:', error);
+    }
   }
 
   public static getInstance(): ConfigService {

@@ -1,6 +1,7 @@
 import type { KnowledgeGraph } from '../graph/graph.ts';
 import type { GraphNode, GraphRelationship } from '../graph/types.ts';
 import { generateDeterministicId } from '../../lib/utils.ts';
+import { ignoreService } from '../../config/ignore-service.js';
 
 export interface StructureInput {
   projectRoot: string;
@@ -16,42 +17,6 @@ export class StructureProcessor {
     relationshipsProcessed: 0
   };
 
-  // Import ignore patterns from ParsingProcessor
-  private static readonly IGNORE_PATTERNS = new Set([
-    // Version Control
-    '.git', '.svn', '.hg',
-    
-    // Package Managers & Dependencies
-    'node_modules', 'bower_components', 'jspm_packages', 'vendor', 'deps',
-    
-    // Python Virtual Environments & Cache
-    'venv', 'env', '.venv', '.env', 'envs', 'virtualenv', '__pycache__',
-    '.pytest_cache', '.mypy_cache', '.tox',
-    
-    // Build & Distribution Directories
-    'build', 'dist', 'out', 'target', 'bin', 'obj', '.gradle', '_build',
-    
-    // Static Assets and Public Directories
-    'public', 'assets', 'static',
-    
-    // IDE & Editor Directories
-    '.vs', '.vscode', '.idea', '.eclipse', '.settings',
-    
-    // Temporary & Log Directories
-    'tmp', '.tmp', 'temp', 'logs', 'log',
-    
-    // Coverage & Testing
-    'coverage', '.coverage', 'htmlcov', '.nyc_output',
-    
-    // OS & System
-    '.DS_Store', 'Thumbs.db',
-    
-    // Documentation Build Output
-    '_site', '.docusaurus',
-    
-    // Cache Directories
-    '.cache', '.parcel-cache', '.next', '.nuxt'
-  ]);
 
   /**
    * Process complete repository structure directly from discovered paths
@@ -328,80 +293,18 @@ export class StructureProcessor {
 
   /**
    * Check if a directory should be hidden from the KG visualization
-   * This matches the ignore patterns used in ParsingProcessor
+   * Uses centralized ignore service
    */
   private shouldHideDirectory(dirPath: string): boolean {
-    const pathSegments = dirPath.split('/');
-    
-    // Check if any segment of the path matches an ignore pattern
-    const hasIgnoredSegment = pathSegments.some(segment => 
-      StructureProcessor.IGNORE_PATTERNS.has(segment.toLowerCase())
-    );
-    
-    if (hasIgnoredSegment) {
-      return true;
-    }
-    
-    // Additional pattern matching
-    const lowerPath = dirPath.toLowerCase();
-    
-    // Hide Python egg-info directories
-    if (lowerPath.includes('.egg-info')) {
-      return true;
-    }
-    
-    // Hide site-packages directories
-    if (lowerPath.includes('site-packages')) {
-      return true;
-    }
-    
-    // Hide most hidden directories (except important ones like .github)
-    for (const segment of pathSegments) {
-      if (segment.startsWith('.') && segment !== '.github') {
-        return true;
-      }
-    }
-    
-    return false;
+    return ignoreService.shouldIgnoreDirectory(dirPath);
   }
 
   /**
    * Check if a file should be hidden from the KG visualization
-   * This matches the ignore patterns used in ParsingProcessor
+   * Uses centralized ignore service
    */
   private shouldHideFile(filePath: string): boolean {
-    const pathSegments = filePath.split('/');
-    
-    // Check if any segment of the path matches an ignore pattern
-    const hasIgnoredSegment = pathSegments.some(segment => 
-      StructureProcessor.IGNORE_PATTERNS.has(segment.toLowerCase())
-    );
-    
-    if (hasIgnoredSegment) {
-      return true;
-    }
-    
-    // Additional pattern matching
-    const lowerPath = filePath.toLowerCase();
-    
-    // Hide Python egg-info directories
-    if (lowerPath.includes('.egg-info')) {
-      return true;
-    }
-    
-    // Hide site-packages directories
-    if (lowerPath.includes('site-packages')) {
-      return true;
-    }
-    
-    // Hide most hidden directories (except important ones like .github)
-    for (const segment of pathSegments) {
-      if (segment.startsWith('.') && segment !== '.github') {
-        return true;
-      }
-    }
-    
-    return false;
+    return ignoreService.shouldIgnorePath(filePath);
   }
 
   /**

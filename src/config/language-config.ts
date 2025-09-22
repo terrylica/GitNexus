@@ -161,42 +161,8 @@ const TYPESCRIPT_BUILTINS = new Set([
   'InstanceType', 'ThisParameterType', 'OmitThisParameter', 'ThisType'
 ]);
 
-// Centralized ignore patterns
-export const IGNORE_PATTERNS = new Set([
-  // Version Control
-  '.git', '.svn', '.hg',
-  
-  // Package Managers & Dependencies
-  'node_modules', 'bower_components', 'jspm_packages', 'vendor', 'deps',
-  
-  // Python Virtual Environments & Cache
-  'venv', 'env', '.venv', '.env', 'envs', 'virtualenv', '__pycache__',
-  '.pytest_cache', '.mypy_cache', '.tox',
-  
-  // Build & Distribution Directories
-  'build', 'dist', 'out', 'target', 'bin', 'obj', '.gradle', '_build',
-  
-  // Static Assets and Public Directories
-  'public', 'assets', 'static',
-  
-  // IDE & Editor Directories
-  '.vs', '.vscode', '.idea', '.eclipse', '.settings',
-  
-  // Temporary & Log Directories
-  'tmp', '.tmp', 'temp', 'logs', 'log',
-  
-  // Coverage & Testing
-  'coverage', '.coverage', 'htmlcov', '.nyc_output',
-  
-  // OS & System
-  '.DS_Store', 'Thumbs.db',
-  
-  // Documentation Build Output
-  '_site', '.docusaurus',
-  
-  // Cache Directories
-  '.cache', '.parcel-cache', '.next', '.nuxt'
-]);
+// Note: Ignore patterns have been moved to the centralized IgnoreService
+// See src/config/ignore-service.ts and gitnexus.config.ts
 
 // Language configurations
 export const LANGUAGE_CONFIGS: Record<string, LanguageConfig> = {

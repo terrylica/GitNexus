@@ -1,4 +1,5 @@
 import axios, { type AxiosInstance, type AxiosResponse } from 'axios';
+import { ignoreService } from '../config/ignore-service.js';
 
 interface GitHubFile {
   name: string;
@@ -253,202 +254,16 @@ export class GitHubService {
 
   private shouldSkipDirectory(path: string): boolean {
     if (!path) return true; // Skip if path is undefined/null
-    
-    const skipDirs = [
-      // Git version control
-      '.git',
-      // JavaScript dependencies (common in full-stack projects)
-      'node_modules',
-      // Python bytecode cache
-      '__pycache__',
-      // Python virtual environments
-      'venv',
-      'env', 
-      '.venv',
-      'envs',
-      'virtualenv',
-      // Build, distribution, and temporary directories
-      'build',
-      'dist', 
-      'logs',
-      'tmp',
-      '.tmp',
-      // Static assets and public files
-      'public',
-      'assets',
-      'static',
-      // Additional common directories to skip
-      'coverage',
-      '.coverage',
-      'htmlcov',
-      'vendor',
-      'deps',
-      '_build',
-      '.gradle',
-      'bin',
-      'obj',
-      '.vs',
-      '.vscode',
-      '.idea',
-      'temp'
-    ];
-    
-    // Check each directory component in the path
-    const pathParts = path.split('/');
-    for (const part of pathParts) {
-      const dirName = part.toLowerCase();
-      
-      // Check for exact matches
-      if (skipDirs.includes(dirName) || dirName.startsWith('.')) {
-        return true;
-      }
-      
-      // Check for .egg-info directories
-      if (dirName.endsWith('.egg-info')) {
-        return true;
-      }
-    }
-    
-    // Check for virtual environment patterns anywhere in the path
-    const fullPathLower = path.toLowerCase();
-    const venvPatterns = [
-      '/.venv/',
-      '/venv/',
-      '/env/',
-      '/.env/',
-      '/envs/',
-      '/virtualenv/',
-      '/site-packages/',
-      '/lib/python',
-      '/lib64/python',
-      '/scripts/',
-      '/bin/python'
-    ];
-    
-    if (venvPatterns.some(pattern => fullPathLower.includes(pattern))) {
-      return true;
-    }
-    
-    return false;
+    return ignoreService.shouldIgnoreDirectory(path);
   }
 
   private shouldIncludeFile(path: string): boolean {
     if (!path) return false; // Skip if path is undefined/null
-    
-    const fileName = path.split('/').pop() || '';
-    
-    // Skip hidden files except specific config files
-    if (fileName.startsWith('.') && !fileName.endsWith('.env.example')) {
-      return false;
-    }
-    
-    // Skip Python-specific file patterns
-    const skipPatterns = [
-      // Python compiled bytecode
-      /\.pyc$/,
-      /\.pyo$/,
-      // Python extension modules (binary)
-      /\.pyd$/,
-      /\.so$/,
-      // Python packages
-      /\.egg$/,
-      /\.whl$/,
-      // Lock files
-      /\.lock$/,
-      /poetry\.lock$/,
-      /Pipfile\.lock$/,
-      // Editor swap files
-      /\..*\.swp$/,
-      /\..*\.swo$/,
-      // OS metadata files
-      /^Thumbs\.db$/,
-      /^\.DS_Store$/,
-      // General binary and archive files
-      /\.zip$/,
-      /\.tar$/,
-      /\.rar$/,
-      /\.7z$/,
-      /\.gz$/,
-      // Media files
-      /\.(jpg|jpeg|png|gif|bmp|svg|ico|tiff|webp)$/i,
-      /\.(mp4|avi|mov|wmv|flv|webm|mkv|m4v)$/i,
-      /\.(mp3|wav|flac|aac|ogg|m4a|wma)$/i,
-      // Document files
-      /\.(pdf|doc|docx|xls|xlsx|ppt|pptx)$/i,
-      // Other binary files
-      /\.(exe|dll|dylib|wasm|jar|war|ear|deb|rpm|dmg|msi|pkg|apk|ipa)$/i,
-      // Font files
-      /\.(woff|woff2|ttf|eot|otf)$/i,
-      // Minified files and source maps
-      /\.min\.(js|css)$/,
-      /\.map$/,
-      // Log and temporary files
-      /\.log$/,
-      /\.tmp$/,
-      /\.cache$/,
-      /\.pid$/,
-      /\.seed$/
-    ];
-    
-    if (skipPatterns.some(pattern => pattern.test(fileName))) {
-      return false;
-    }
-    
-    // Include common source and important config files
-    const extension = '.' + (fileName.split('.').pop() || '').toLowerCase();
-
-    const includeSourceExts = new Set(['.py', '.js', '.jsx', '.ts', '.tsx']);
-    if (includeSourceExts.has(extension)) {
-      return true;
-    }
-
-    const importantConfigFiles = new Set([
-      // Python
-      'pyproject.toml', 'setup.py', 'requirements.txt', 'setup.cfg', 'tox.ini', 'pytest.ini', 'pipfile', 'poetry.toml',
-      '__init__.py',
-      // JS/TS ecosystem
-      'package.json', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
-      'tsconfig.json', 'tsconfig.base.json',
-      'vite.config.ts', 'vite.config.js',
-      '.eslintrc', '.eslintrc.json', '.eslintrc.js', '.prettierrc', '.prettierrc.json',
-      // Docs/licenses
-      'readme.md', 'license', 'changelog.md', 'manifest.in'
-    ]);
-    if (importantConfigFiles.has(fileName.toLowerCase())) {
-      return true;
-    }
-
-    return false;
+    return !ignoreService.shouldIgnorePath(path);
   }
 
   private shouldSkipFileForContent(path: string): boolean {
-    const pathLower = path.toLowerCase();
-    
-    // Skip .git files and directories (these can be massive and not useful for code analysis)
-    if (pathLower.includes('/.git/') || pathLower.startsWith('.git/')) {
-      return true;
-    }
-    
-    // Skip binary files that shouldn't have content
-    const binaryExtensions = [
-      // Images
-      '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.bmp', '.tiff', '.webp',
-      // Fonts
-      '.woff', '.woff2', '.ttf', '.eot', '.otf',
-      // Documents
-      '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
-      // Archives
-      '.zip', '.tar', '.gz', '.rar', '.7z', '.bz2', '.xz', '.lzma',
-      // Executables & Libraries
-      '.exe', '.dll', '.so', '.dylib', '.class', '.pyc', '.o', '.a', '.lib', '.wasm',
-      // Package formats
-      '.jar', '.war', '.ear', '.deb', '.rpm', '.dmg', '.msi', '.pkg', '.apk', '.ipa',
-      // Media
-      '.mp4', '.mp3', '.wav', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv', '.m4v',
-      '.aac', '.ogg', '.flac', '.m4a', '.wma'
-    ];
-    
-    return binaryExtensions.some(ext => pathLower.endsWith(ext));
+    return ignoreService.shouldIgnorePath(path);
   }
 
   public async getAllPathsRecursively(owner: string, repo: string, path: string = ''): Promise<string[]> {

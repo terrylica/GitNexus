@@ -902,6 +902,7 @@ export class KuzuKnowledgeGraph implements KnowledgeGraph {
         readBack = String(readData);
       }
       
+      
       // Execute COPY statement
       const copyQuery = `COPY ${label} FROM '${csvPath}'`;
       const result = await this.queryEngine.executeQuery(copyQuery);

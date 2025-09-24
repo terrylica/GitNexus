@@ -44,10 +44,6 @@ export class GitNexusCSVGenerator {
         
         const formattedValue = this.formatValueForCSV(value, col, label);
         
-        // Debug: Check Function nodes and docstring column specifically (can be removed after verification)
-        // if (label === 'Function' && (col === 'docstring' || col === 'parentClass')) {
-        //   console.log(`   🔍 Function ${node.id} - Column ${colIndex} (${col}): value="${value}" -> formatted="${formattedValue}"`);
-        // }
         
         return formattedValue;
       });
@@ -58,31 +54,6 @@ export class GitNexusCSVGenerator {
       }
       
       let csvRow = rowValues.join(',');
-      
-      // CRITICAL FIX: Ensure we have the right number of commas for empty trailing values
-      const expectedCommas = allColumns.length - 1;
-      const actualCommas = (csvRow.match(/,/g) || []).length;
-      
-      // Debug for problematic function
-      if (node.id === 'function_c2f7f72a') {
-        console.log(`🔧 Comma analysis for ${node.id}:`);
-        console.log(`   Expected commas: ${expectedCommas}`);
-        console.log(`   Actual commas: ${actualCommas}`);
-        console.log(`   Row before fix: "${csvRow}"`);
-        console.log(`   Row ends with: "${csvRow.slice(-5)}"`);
-        console.log(`   Row char codes: [${csvRow.slice(-5).split('').map(c => c.charCodeAt(0)).join(', ')}]`);
-      }
-      
-      if (actualCommas < expectedCommas) {
-        const missingCommas = expectedCommas - actualCommas;
-        csvRow += ','.repeat(missingCommas);
-        console.log(`🔧 Fixed missing ${missingCommas} trailing comma(s) for ${node.id}`);
-        
-        if (node.id === 'function_c2f7f72a') {
-          console.log(`   Row after fix: "${csvRow}"`);
-          console.log(`   New comma count: ${(csvRow.match(/,/g) || []).length}`);
-        }
-      }
       
       
       return csvRow;
@@ -126,10 +97,10 @@ export class GitNexusCSVGenerator {
    * Schema-aware value formatting with type conversion
    */
   private static formatValueForCSV(value: any, column: string, entityType: NodeLabel | RelationshipType): string {
-    if (value === null || value === undefined) return '';
+    if (value === null || value === undefined) return '""'; // Explicit empty value for KuzuDB
     
-    // Handle empty strings
-    if (value === '') return '';
+    // Handle empty strings - make them explicit for KuzuDB
+    if (value === '') return '""';
     
     // Handle arrays (convert to JSON string for KuzuDB STRING[] compatibility)
     if (Array.isArray(value)) {

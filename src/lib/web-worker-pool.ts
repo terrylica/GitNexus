@@ -59,11 +59,6 @@ export class WebWorkerPool {
     this.timeout = options.timeout || 30000; // 30 seconds
     this.name = options.name || 'WebWorkerPool';
     
-    // Debug: Log actual worker configuration
-    console.log(`🔧 WebWorkerPool "${this.name}" constructor:`);
-    console.log(`   Requested maxWorkers: ${options.maxWorkers}`);
-    console.log(`   Actual maxWorkers: ${this.maxWorkers}`);
-    console.log(`   navigator.hardwareConcurrency: ${navigator.hardwareConcurrency}`);
   }
 
   /**
@@ -491,28 +486,16 @@ export const WebWorkerPoolUtils = {
    * Create a worker pool using GitNexus configuration
    */
   async createWorkerPool(options: Partial<WorkerPoolOptions> = {}): Promise<WebWorkerPool> {
-    console.log('🔧 WebWorkerPoolUtils: Loading config and calculating workers...');
-    
     // Import config loader dynamically to avoid circular dependencies
     const { ConfigLoader } = await import('../config/config-loader.ts');
     const { calculateWorkerCount } = await import('./worker-calculator.ts');
     
-    console.log('🔧 WebWorkerPoolUtils: Imports loaded, getting config...');
     const config = await ConfigLoader.getInstance().loadConfig();
-    console.log('🔧 WebWorkerPoolUtils: Config loaded, calculating worker count...');
     const workerCalc = await calculateWorkerCount(config);
-    console.log('🔧 WebWorkerPoolUtils: Worker calculation complete:', workerCalc.workerCount);
     
     console.log(''); // Empty line for better readability
     console.log('🔧 GitNexus Worker Pool Initialization');
     console.log('='.repeat(50));
-    
-    console.log('🔧 WebWorkerPoolUtils: Creating WebWorkerPool with options:', {
-      maxWorkers: workerCalc.workerCount,
-      timeout: config.processing.parallel.workerTimeoutMs,
-      name: 'GitNexusWorkerPool',
-      ...options
-    });
     
     const workerPool = new WebWorkerPool({
       maxWorkers: workerCalc.workerCount,
@@ -520,8 +503,6 @@ export const WebWorkerPoolUtils = {
       name: 'GitNexusWorkerPool',
       ...options
     });
-    
-    console.log('🔧 WebWorkerPoolUtils: WebWorkerPool created, maxWorkers:', workerPool.maxWorkersCount);
     
     console.log('='.repeat(50));
     console.log('✅ Worker pool created successfully');

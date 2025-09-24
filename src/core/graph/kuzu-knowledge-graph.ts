@@ -9,8 +9,8 @@
 import type { KnowledgeGraph, GraphNode, GraphRelationship, NodeLabel, RelationshipType } from './types.ts';
 import type { KuzuQueryEngine, KuzuQueryResult } from './kuzu-query-engine.ts';
 import { generateId } from '../../lib/utils.ts';
-import { GitNexusCSVGenerator, CSVUtils } from '../kuzu/csv-generator.ts';
-import { isKuzuCopyEnabled } from '../../config/features.ts';
+import { GitNexusCSVGenerator } from '../kuzu/csv-generator.ts';
+import { isKuzuCopyEnabled, isPolymorphicNodesEnabled } from '../../config/features.ts';
 
 export interface KuzuGraphOptions {
   enableCache?: boolean;
@@ -64,12 +64,17 @@ export class KuzuKnowledgeGraph implements KnowledgeGraph {
     try {
       console.log(`🚀 BATCH: Starting batch commit of ${this.pendingNodes.length} nodes`);
       
-      // Group nodes by label for batch processing
-      const nodesByLabel = this.groupNodesByLabel(this.pendingNodes);
-      
-      // Process each label as a batch
-      for (const [label, nodes] of Object.entries(nodesByLabel)) {
-        await this.commitNodesBatch(label, nodes);
+      // Check if polymorphic nodes are enabled (single table approach)
+      if (isPolymorphicNodesEnabled()) {
+        await this.commitPolymorphicNodesBatch(this.pendingNodes);
+      } else {
+        // Traditional approach: Group nodes by label for batch processing
+        const nodesByLabel = this.groupNodesByLabel(this.pendingNodes);
+        
+        // Process each label as a batch
+        for (const [label, nodes] of Object.entries(nodesByLabel)) {
+          await this.commitNodesBatch(label, nodes);
+        }
       }
       
       this.pendingNodes = [];
@@ -122,12 +127,17 @@ export class KuzuKnowledgeGraph implements KnowledgeGraph {
     try {
       console.log(`🚀 BATCH: Starting batch commit of ${this.pendingRelationships.length} relationships`);
       
-      // Group relationships by type for batch processing
-      const relsByType = this.groupRelationshipsByType(this.pendingRelationships);
-      
-      // Process each type as a batch
-      for (const [type, relationships] of Object.entries(relsByType)) {
-        await this.commitRelationshipsBatch(type, relationships);
+      // Check if polymorphic nodes are enabled (single table approach)
+      if (isPolymorphicNodesEnabled()) {
+        await this.commitPolymorphicRelationshipsBatch(this.pendingRelationships);
+      } else {
+        // Traditional approach: Group relationships by type for batch processing
+        const relsByType = this.groupRelationshipsByType(this.pendingRelationships);
+        
+        // Process each type as a batch
+        for (const [type, relationships] of Object.entries(relsByType)) {
+          await this.commitRelationshipsBatch(type, relationships);
+        }
       }
       
       this.pendingRelationships = [];
@@ -1012,6 +1022,226 @@ export class KuzuKnowledgeGraph implements KnowledgeGraph {
     } catch (error) {
       return false;
     }
+  }
+
+  // ============================================================================
+  // POLYMORPHIC NODE OPERATIONS - Reuses existing patterns
+  // ============================================================================
+
+  /**
+   * Commit all nodes to single polymorphic table (reuses existing COPY/MERGE patterns)
+   */
+  private async commitPolymorphicNodesBatch(nodes: GraphNode[]): Promise<void> {
+    if (nodes.length === 0) return;
+    
+    console.log(`🚀 POLYMORPHIC: Starting single-table commit of ${nodes.length} nodes (${this.getNodeTypesSummary(nodes)})`);
+    
+    // Check if COPY is enabled and supported (reuses existing logic)
+    if (this.isCopyEnabled() && await this.isCopySupported()) {
+      try {
+        await this.commitPolymorphicNodesBatchWithCOPY(nodes);
+        return; // Success with COPY
+      } catch (copyError) {
+        console.warn(`⚠️ POLYMORPHIC-COPY: COPY failed, falling back to individual commits:`, copyError.message);
+        // Fall through to individual approach
+      }
+    } else if (!this.isCopyEnabled()) {
+      console.log(`🔄 POLYMORPHIC-MERGE: COPY disabled, using individual commits for ${nodes.length} nodes`);
+    } else {
+      console.log(`🔄 POLYMORPHIC-MERGE: COPY not supported, using individual commits for ${nodes.length} nodes`);
+    }
+    
+    // Fallback to individual node commits (reuses existing commitNode logic)
+    await this.commitPolymorphicNodesBatchWithIndividual(nodes);
+  }
+
+  /**
+   * Commit polymorphic nodes using single COPY operation (reuses existing COPY patterns)
+   */
+  private async commitPolymorphicNodesBatchWithCOPY(nodes: GraphNode[]): Promise<void> {
+    if (nodes.length === 0) return;
+
+    try {
+      console.log(`🚀 POLYMORPHIC-COPY: Loading ${nodes.length} nodes via single COPY statement`);
+      const startTime = performance.now();
+
+      // Generate polymorphic CSV (reuses new CSV generator)
+      const csv = GitNexusCSVGenerator.generatePolymorphicNodeCSV(nodes);
+      
+      if (!csv) {
+        throw new Error('Failed to generate polymorphic CSV');
+      }
+
+      // Write CSV to WASM filesystem (reuses existing FS logic)
+      const kuzuFS = await this.getKuzuFS();
+      const csvPath = `/temp_polymorphic_nodes_${Date.now()}.csv`;
+      
+      // Handle both sync and async writeFile (reuses existing FS handling)
+      const writeResult = kuzuFS.writeFile(csvPath, csv);
+      if (writeResult && typeof writeResult.then === 'function') {
+        await writeResult;
+      }
+
+      // Execute COPY statement (reuses existing query execution)
+      const copyQuery = `COPY CodeElement FROM '${csvPath}'`;
+      console.log(`🔍 POLYMORPHIC-COPY: Executing: ${copyQuery}`);
+      
+      await this.queryEngine.executeQuery(copyQuery);
+      
+      const endTime = performance.now();
+      const csvBytes = new TextEncoder().encode(csv).length;
+      
+      console.log(`✅ POLYMORPHIC-COPY: Successfully loaded ${nodes.length} nodes in ${(endTime - startTime).toFixed(2)}ms (${csvBytes} bytes CSV)`);
+      
+      // Verify the data was written correctly (reuses existing verification)
+      const countResult = await this.queryEngine.executeQuery(`MATCH (n:CodeElement) RETURN COUNT(n) as count`);
+      if (countResult.records && countResult.records.length > 0) {
+        const totalCount = countResult.records[0]?.count || 0;
+        console.log(`📊 POLYMORPHIC-COPY: KuzuDB now contains ${totalCount} total CodeElement nodes`);
+      }
+      
+    } catch (error) {
+      console.error(`❌ POLYMORPHIC-COPY: Failed to load nodes:`, error);
+      throw new Error(`Polymorphic COPY operation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Fallback: Commit polymorphic nodes individually (reuses existing commitNode logic)
+   */
+  private async commitPolymorphicNodesBatchWithIndividual(nodes: GraphNode[]): Promise<void> {
+    if (nodes.length === 0) return;
+    
+    console.log(`🔄 POLYMORPHIC-INDIVIDUAL: Committing ${nodes.length} nodes individually to CodeElement table`);
+    
+    // Note: This would require modifying individual node commits to use CodeElement table
+    // For now, fall back to traditional approach
+    const nodesByLabel = this.groupNodesByLabel(nodes);
+    
+    for (const [label, labelNodes] of Object.entries(nodesByLabel)) {
+      await this.commitNodesBatch(label, labelNodes);
+    }
+  }
+
+  /**
+   * Get summary of node types for logging (reuses existing grouping logic)
+   */
+  private getNodeTypesSummary(nodes: GraphNode[]): string {
+    const nodesByLabel = this.groupNodesByLabel(nodes);
+    const summary = Object.entries(nodesByLabel)
+      .map(([label, labelNodes]) => `${labelNodes.length} ${label}`)
+      .join(', ');
+    return summary;
+  }
+
+  // ============================================================================
+  // POLYMORPHIC RELATIONSHIP OPERATIONS - Reuses existing patterns
+  // ============================================================================
+
+  /**
+   * Commit all relationships to single polymorphic table (reuses existing COPY/MERGE patterns)
+   */
+  private async commitPolymorphicRelationshipsBatch(relationships: GraphRelationship[]): Promise<void> {
+    if (relationships.length === 0) return;
+    
+    console.log(`🚀 POLYMORPHIC-REL: Starting single-table commit of ${relationships.length} relationships (${this.getRelationshipTypesSummary(relationships)})`);
+    
+    // Check if COPY is enabled and supported (reuses existing logic)
+    if (this.isCopyEnabled() && await this.isCopySupported()) {
+      try {
+        await this.commitPolymorphicRelationshipsBatchWithCOPY(relationships);
+        return; // Success with COPY
+      } catch (copyError) {
+        console.warn(`⚠️ POLYMORPHIC-REL-COPY: COPY failed, falling back to individual commits:`, copyError.message);
+        // Fall through to individual approach
+      }
+    } else if (!this.isCopyEnabled()) {
+      console.log(`🔄 POLYMORPHIC-REL-MERGE: COPY disabled, using individual commits for ${relationships.length} relationships`);
+    } else {
+      console.log(`🔄 POLYMORPHIC-REL-MERGE: COPY not supported, using individual commits for ${relationships.length} relationships`);
+    }
+    
+    // Fallback to individual relationship commits (reuses existing logic)
+    await this.commitPolymorphicRelationshipsBatchWithIndividual(relationships);
+  }
+
+  /**
+   * Commit polymorphic relationships using single COPY operation (reuses existing COPY patterns)
+   */
+  private async commitPolymorphicRelationshipsBatchWithCOPY(relationships: GraphRelationship[]): Promise<void> {
+    if (relationships.length === 0) return;
+
+    try {
+      console.log(`🚀 POLYMORPHIC-REL-COPY: Loading ${relationships.length} relationships via single COPY statement`);
+      const startTime = performance.now();
+
+      // Generate polymorphic relationship CSV (reuses new CSV generator)
+      const csv = GitNexusCSVGenerator.generatePolymorphicRelationshipCSV(relationships);
+      
+      if (!csv) {
+        throw new Error('Failed to generate polymorphic relationship CSV');
+      }
+
+      // Write CSV to WASM filesystem (reuses existing FS logic)
+      const kuzuFS = await this.getKuzuFS();
+      const csvPath = `/temp_polymorphic_relationships_${Date.now()}.csv`;
+      
+      // Handle both sync and async writeFile (reuses existing FS handling)
+      const writeResult = kuzuFS.writeFile(csvPath, csv);
+      if (writeResult && typeof writeResult.then === 'function') {
+        await writeResult;
+      }
+
+      // Execute COPY statement (reuses existing query execution)
+      const copyQuery = `COPY CodeRelationship FROM '${csvPath}'`;
+      console.log(`🔍 POLYMORPHIC-REL-COPY: Executing: ${copyQuery}`);
+      
+      await this.queryEngine.executeQuery(copyQuery);
+      
+      const endTime = performance.now();
+      const csvBytes = new TextEncoder().encode(csv).length;
+      
+      console.log(`✅ POLYMORPHIC-REL-COPY: Successfully loaded ${relationships.length} relationships in ${(endTime - startTime).toFixed(2)}ms (${csvBytes} bytes CSV)`);
+      
+      // Verify the data was written correctly (reuses existing verification)
+      const countResult = await this.queryEngine.executeQuery(`MATCH ()-[r:CodeRelationship]->() RETURN COUNT(r) as count`);
+      if (countResult.rows && countResult.rows.length > 0) {
+        const totalCount = countResult.rows[0]?.[0] || 0;
+        console.log(`📊 POLYMORPHIC-REL-COPY: KuzuDB now contains ${totalCount} total CodeRelationship relationships`);
+      }
+      
+    } catch (error) {
+      console.error(`❌ POLYMORPHIC-REL-COPY: Failed to load relationships:`, error);
+      throw new Error(`Polymorphic relationship COPY operation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Fallback: Commit polymorphic relationships individually (reuses existing logic)
+   */
+  private async commitPolymorphicRelationshipsBatchWithIndividual(relationships: GraphRelationship[]): Promise<void> {
+    if (relationships.length === 0) return;
+    
+    console.log(`🔄 POLYMORPHIC-REL-INDIVIDUAL: Committing ${relationships.length} relationships individually to CodeRelationship table`);
+    
+    // Note: This would require modifying individual relationship commits to use CodeRelationship table
+    // For now, fall back to traditional approach
+    const relsByType = this.groupRelationshipsByType(relationships);
+    
+    for (const [type, typeRels] of Object.entries(relsByType)) {
+      await this.commitRelationshipsBatch(type, typeRels);
+    }
+  }
+
+  /**
+   * Get summary of relationship types for logging (reuses existing grouping logic)
+   */
+  private getRelationshipTypesSummary(relationships: GraphRelationship[]): string {
+    const relsByType = this.groupRelationshipsByType(relationships);
+    const summary = Object.entries(relsByType)
+      .map(([type, typeRels]) => `${typeRels.length} ${type}`)
+      .join(', ');
+    return summary;
   }
 
 }

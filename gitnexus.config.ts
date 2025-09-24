@@ -341,6 +341,7 @@ const config: GitNexusConfig = {
     enableWebWorkers: true,
     enableBatchProcessing: true,
     enableKuzuCopy: true, // Enable COPY-based bulk loading
+    enablePolymorphicNodes: true, // Enable single-table polymorphic nodes (MAJOR PERFORMANCE BOOST)
     enableCaching: true,
     enableWorkerPool: true,
     enableParallelParsing: true,

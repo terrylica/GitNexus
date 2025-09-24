@@ -11,7 +11,14 @@
  */
 
 import type { GraphNode, GraphRelationship, NodeLabel, RelationshipType } from '../graph/types.ts';
-import { NODE_TABLE_SCHEMAS, RELATIONSHIP_TABLE_SCHEMAS } from './kuzu-schema.ts';
+import { 
+  NODE_TABLE_SCHEMAS, 
+  RELATIONSHIP_TABLE_SCHEMAS,
+  POLYMORPHIC_NODE_SCHEMA,
+  POLYMORPHIC_RELATIONSHIP_SCHEMA,
+  getPolymorphicPropertyDefault,
+  getPolymorphicRelationshipPropertyDefault
+} from './kuzu-schema.ts';
 
 export class GitNexusCSVGenerator {
   private static readonly CSV_ESCAPE_REGEX = /[",\r\n]/;
@@ -92,11 +99,123 @@ export class GitNexusCSVGenerator {
     const csv = [header, ...rows].join('\n');
     return csv;
   }
+
+  /**
+   * Generate polymorphic CSV for all nodes in single table
+   * Reuses existing generateNodeCSV logic but combines all node types
+   */
+  static generatePolymorphicNodeCSV(nodes: GraphNode[]): string {
+    if (nodes.length === 0) return '';
+    
+    console.log(`📝 Generating polymorphic CSV for ${nodes.length} nodes of all types`);
+    
+    // Get all columns from polymorphic schema (reuses existing schema patterns)
+    const allColumns = ['id', 'elementType', ...Object.keys(POLYMORPHIC_NODE_SCHEMA).filter(col => col !== 'id' && col !== 'elementType')];
+    
+    // Generate header (reuses existing header generation)
+    const header = allColumns.join(',');
+    
+    // Generate rows for all nodes regardless of type (reuses existing row generation pattern)
+    const rows = nodes.map((node) => {
+      const rowValues = allColumns.map((col) => {
+        let value: unknown;
+        
+        if (col === 'id') {
+          value = node.id;
+        } else if (col === 'elementType') {
+          // Critical: Set elementType to the node's label for polymorphic filtering
+          value = node.label;
+        } else {
+          // Get value from node properties
+          value = node.properties[col];
+          
+          // Apply polymorphic defaults for missing properties (reuses existing default logic)
+          if (value === undefined) {
+            value = getPolymorphicPropertyDefault(col);
+          }
+        }
+        
+        // Reuse existing CSV formatting
+        const formattedValue = GitNexusCSVGenerator.formatValueForCSV(value, col, node.label);
+        return formattedValue;
+      });
+      
+      // Reuse existing row validation logic
+      while (rowValues.length < allColumns.length) {
+        rowValues.push('""'); // Add explicit empty values for KuzuDB
+      }
+      
+      return rowValues.join(',');
+    });
+    
+    const csv = [header, ...rows].join('\n');
+    
+    console.log(`📊 Generated polymorphic CSV: ${csv.length} bytes, ${rows.length} data rows, ${allColumns.length} columns`);
+    
+    return csv;
+  }
+
+  /**
+   * Generate polymorphic relationship CSV for all relationships in single table
+   * Reuses existing generateRelationshipCSV logic but combines all relationship types
+   */
+  static generatePolymorphicRelationshipCSV(relationships: GraphRelationship[]): string {
+    if (relationships.length === 0) return '';
+    
+    console.log(`📝 Generating polymorphic relationship CSV for ${relationships.length} relationships of all types`);
+    
+    // Get all columns from polymorphic relationship schema (reuses existing schema patterns)
+    const allColumns = ['source', 'target', 'relationshipType', ...Object.keys(POLYMORPHIC_RELATIONSHIP_SCHEMA).filter(col => col !== 'relationshipType')];
+    
+    // Generate header (reuses existing header generation)
+    const header = allColumns.join(',');
+    
+    // Generate rows for all relationships regardless of type (reuses existing row generation pattern)
+    const rows = relationships.map((rel) => {
+      const rowValues = allColumns.map((col) => {
+        let value: unknown;
+        
+        if (col === 'source') {
+          value = rel.source;
+        } else if (col === 'target') {
+          value = rel.target;
+        } else if (col === 'relationshipType') {
+          // Critical: Set relationshipType to the relationship's type for polymorphic filtering
+          value = rel.type;
+        } else {
+          // Get value from relationship properties
+          value = rel.properties[col];
+          
+          // Apply polymorphic defaults for missing properties (reuses existing default logic)
+          if (value === undefined) {
+            value = getPolymorphicRelationshipPropertyDefault(col);
+          }
+        }
+        
+        // Reuse existing CSV formatting
+        const formattedValue = GitNexusCSVGenerator.formatValueForCSV(value, col, rel.type);
+        return formattedValue;
+      });
+      
+      // Reuse existing row validation logic
+      while (rowValues.length < allColumns.length) {
+        rowValues.push('""'); // Add explicit empty values for KuzuDB
+      }
+      
+      return rowValues.join(',');
+    });
+    
+    const csv = [header, ...rows].join('\n');
+    
+    console.log(`📊 Generated polymorphic relationship CSV: ${csv.length} bytes, ${rows.length} data rows, ${allColumns.length} columns`);
+    
+    return csv;
+  }
   
   /**
    * Schema-aware value formatting with type conversion
    */
-  private static formatValueForCSV(value: any, column: string, entityType: NodeLabel | RelationshipType): string {
+  static formatValueForCSV(value: any, column: string, entityType: NodeLabel | RelationshipType): string {
     if (value === null || value === undefined) return '""'; // Explicit empty value for KuzuDB
     
     // Handle empty strings - make them explicit for KuzuDB
@@ -405,4 +524,5 @@ export class CSVUtils {
     if (itemCount < 5000) return 1000;
     return 1500; // Max chunk size for very large datasets
   }
+
 }

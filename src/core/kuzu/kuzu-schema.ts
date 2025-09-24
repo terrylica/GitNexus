@@ -12,7 +12,10 @@ import type { KuzuInstance, NodeSchema, RelationshipSchema } from './kuzu-loader
 /**
  * Complete node table definitions for GitNexus knowledge graph
  */
-export const NODE_TABLE_SCHEMAS: Record<NodeLabel, NodeSchema> = {
+/**
+ * Individual node table schemas (kept for backward compatibility and reference)
+ */
+export const INDIVIDUAL_NODE_SCHEMAS: Record<NodeLabel, NodeSchema> = {
   Project: {
     id: 'STRING',
     name: 'STRING',
@@ -191,6 +194,40 @@ export const NODE_TABLE_SCHEMAS: Record<NodeLabel, NodeSchema> = {
 };
 
 /**
+ * Generate polymorphic schema by combining all individual schemas
+ * This reuses existing schema definitions to avoid redundancy
+ */
+function generatePolymorphicSchema(): NodeSchema {
+  const combinedSchema: NodeSchema = {
+    id: 'STRING',
+    elementType: 'STRING'  // Discriminator column
+  };
+
+  // Combine all properties from all individual schemas
+  for (const [nodeType, schema] of Object.entries(INDIVIDUAL_NODE_SCHEMAS)) {
+    for (const [property, type] of Object.entries(schema)) {
+      if (property !== 'id') {  // Skip 'id' as it's already defined
+        combinedSchema[property] = type;
+      }
+    }
+  }
+
+  return combinedSchema;
+}
+
+/**
+ * Polymorphic node schema containing all properties from all node types
+ * Generated automatically from INDIVIDUAL_NODE_SCHEMAS to avoid redundancy
+ */
+export const POLYMORPHIC_NODE_SCHEMA: NodeSchema = generatePolymorphicSchema();
+
+/**
+ * For backward compatibility, export the individual schemas as NODE_TABLE_SCHEMAS
+ * TODO: This will be replaced with POLYMORPHIC_NODE_SCHEMA in Phase 3
+ */
+export const NODE_TABLE_SCHEMAS = INDIVIDUAL_NODE_SCHEMAS;
+
+/**
  * Relationship table definitions with their allowed node connections
  */
 export interface RelationshipTableDefinition {
@@ -202,7 +239,10 @@ export interface RelationshipTableDefinition {
   schema: RelationshipSchema;
 }
 
-export const RELATIONSHIP_TABLE_SCHEMAS: RelationshipTableDefinition[] = [
+/**
+ * Individual relationship table schemas (kept for backward compatibility)
+ */
+export const INDIVIDUAL_RELATIONSHIP_SCHEMAS: RelationshipTableDefinition[] = [
   {
     name: 'CONTAINS',
     connections: [
@@ -367,6 +407,56 @@ export const RELATIONSHIP_TABLE_SCHEMAS: RelationshipTableDefinition[] = [
 ];
 
 /**
+ * Polymorphic relationship schema - combines all relationship properties
+ * Reuses existing individual relationship schemas to avoid redundancy
+ */
+export const POLYMORPHIC_RELATIONSHIP_SCHEMA = generatePolymorphicRelationshipSchema();
+
+function generatePolymorphicRelationshipSchema(): RelationshipSchema {
+  const combinedSchema: RelationshipSchema = {
+    relationshipType: 'STRING'  // Discriminator column (like elementType for nodes)
+  };
+
+  // Combine all properties from all individual relationship schemas (reuse existing schemas)
+  for (const relDef of INDIVIDUAL_RELATIONSHIP_SCHEMAS) {
+    for (const [property, type] of Object.entries(relDef.schema)) {
+      // Add property if not already present (avoid duplicates)
+      if (!combinedSchema[property]) {
+        combinedSchema[property] = type;
+      }
+    }
+  }
+
+  return combinedSchema;
+}
+
+/**
+ * Generate polymorphic relationship schemas by reusing existing schemas
+ * but making all connections generic (CodeElement to CodeElement)
+ */
+function generatePolymorphicRelationshipSchemas(): RelationshipTableDefinition[] {
+  return INDIVIDUAL_RELATIONSHIP_SCHEMAS.map(relDef => ({
+    name: relDef.name,
+    connections: [
+      { from: 'CodeElement' as NodeLabel, to: 'CodeElement' as NodeLabel }
+    ],
+    schema: relDef.schema  // Reuse existing schema properties
+  }));
+}
+
+/**
+ * Polymorphic relationship schemas - all relationships now connect CodeElement to CodeElement
+ * Generated automatically from INDIVIDUAL_RELATIONSHIP_SCHEMAS to avoid redundancy
+ */
+export const POLYMORPHIC_RELATIONSHIP_SCHEMAS: RelationshipTableDefinition[] = generatePolymorphicRelationshipSchemas();
+
+/**
+ * For backward compatibility, export the individual schemas as RELATIONSHIP_TABLE_SCHEMAS
+ * TODO: This will be replaced with POLYMORPHIC_RELATIONSHIP_SCHEMAS in Phase 3
+ */
+export const RELATIONSHIP_TABLE_SCHEMAS = INDIVIDUAL_RELATIONSHIP_SCHEMAS;
+
+/**
  * Index definitions for optimizing common queries
  */
 export interface IndexDefinition {
@@ -402,6 +492,25 @@ export const INDEX_DEFINITIONS: IndexDefinition[] = [
 ];
 
 /**
+ * Polymorphic index definitions - reuses existing patterns but for CodeElement table
+ */
+export const POLYMORPHIC_INDEX_DEFINITIONS: IndexDefinition[] = [
+  // Primary key
+  { table: 'CodeElement', column: 'id', type: 'PRIMARY' },
+  
+  // Critical index for elementType filtering (most important for performance)
+  { table: 'CodeElement', column: 'elementType', type: 'SECONDARY' },
+  
+  // Reuse existing secondary indexes but for CodeElement table
+  { table: 'CodeElement', column: 'name', type: 'SECONDARY' },
+  { table: 'CodeElement', column: 'filePath', type: 'SECONDARY' },
+  { table: 'CodeElement', column: 'qualifiedName', type: 'SECONDARY' },
+  { table: 'CodeElement', column: 'language', type: 'SECONDARY' },
+  { table: 'CodeElement', column: 'parentClass', type: 'SECONDARY' },
+  { table: 'CodeElement', column: 'type', type: 'SECONDARY' }
+];
+
+/**
  * Schema manager for KuzuDB initialization and migration
  */
 export class KuzuSchemaManager {
@@ -418,19 +527,57 @@ export class KuzuSchemaManager {
     console.log('🏗️ Initializing KuzuDB schema...');
 
     try {
-      // Create all node tables
-      await this.createNodeTables();
+      // Check if polymorphic nodes are enabled
+      const { isPolymorphicNodesEnabled, initializeFeatures } = await import('../../config/features.ts');
+      
+      // Ensure features are initialized
+      await initializeFeatures();
+      
+      const polymorphicEnabled = isPolymorphicNodesEnabled();
+      
+      if (polymorphicEnabled) {
+        console.log('🔄 Using polymorphic schema (single CodeElement table)');
+        await this.initializePolymorphicSchema();
+      } else {
+        console.log('🔄 Using traditional schema (multiple node tables)');
+        // Create all individual node tables
+        await this.createNodeTables();
 
-      // Create all relationship tables
-      await this.createRelationshipTables();
+        // Create all relationship tables
+        await this.createRelationshipTables();
 
-      // Create indexes (if supported by KuzuDB)
-      await this.createIndexes();
+        // Create indexes (if supported by KuzuDB)
+        await this.createIndexes();
+      }
 
       console.log('✅ Schema initialization completed successfully');
     } catch (error) {
       console.error('❌ Schema initialization failed:', error);
       throw new Error(`Schema initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Initialize polymorphic schema (single CodeElement table)
+   * Reuses existing patterns but creates polymorphic tables
+   */
+  async initializePolymorphicSchema(): Promise<void> {
+    console.log('🏗️ Initializing Polymorphic KuzuDB schema...');
+
+    try {
+      // Create single polymorphic node table
+      await this.createPolymorphicNodeTable();
+
+      // Create polymorphic relationship tables
+      await this.createPolymorphicRelationshipTables();
+
+      // Create polymorphic indexes
+      await this.createPolymorphicIndexes();
+
+      console.log('✅ Polymorphic schema initialization completed successfully');
+    } catch (error) {
+      console.error('❌ Polymorphic schema initialization failed:', error);
+      throw new Error(`Polymorphic schema initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -512,6 +659,98 @@ export class KuzuSchemaManager {
         } catch (error) {
           console.log(`ℹ️ Failed to create index on ${indexDef.table}.${indexDef.column}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
+      }
+    }
+  }
+
+  // ============================================================================
+  // POLYMORPHIC SCHEMA METHODS - Reuse existing patterns
+  // ============================================================================
+
+  /**
+   * Create single polymorphic node table (reuses createNodeTables pattern)
+   */
+  private async createPolymorphicNodeTable(): Promise<void> {
+    console.log('📋 Creating polymorphic CodeElement table...');
+
+    try {
+      await this.kuzuInstance.createNodeTable('CodeElement', POLYMORPHIC_NODE_SCHEMA);
+      console.log('✅ Created polymorphic node table: CodeElement');
+    } catch (error) {
+      // Table might already exist
+      console.log(`ℹ️ CodeElement table might already exist: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Create polymorphic relationship tables (reuses createRelationshipTables pattern)
+   */
+  private async createPolymorphicRelationshipTables(): Promise<void> {
+    console.log('🔗 Creating polymorphic relationship tables...');
+
+    // Create single unified relationship table for COPY optimization
+    await this.createPolymorphicRelationshipTable();
+
+    // Also create individual relationship tables for backward compatibility
+    for (const relDef of POLYMORPHIC_RELATIONSHIP_SCHEMAS) {
+      try {
+        // All polymorphic relationships connect CodeElement to CodeElement
+        await this.kuzuInstance.createRelTable(
+          relDef.name,
+          'CodeElement',
+          'CodeElement', 
+          relDef.schema
+        );
+        
+        console.log(`✅ Created polymorphic relationship table: ${relDef.name} (CodeElement -> CodeElement)`);
+        
+      } catch (error) {
+        console.warn(`⚠️ Failed to create polymorphic relationship table ${relDef.name}:`, error);
+      }
+    }
+  }
+
+  /**
+   * Create single unified polymorphic relationship table for COPY optimization
+   * Reuses existing createRelTable pattern
+   */
+  private async createPolymorphicRelationshipTable(): Promise<void> {
+    console.log('🔗 Creating unified polymorphic relationship table...');
+    
+    try {
+      // Create single table with all relationship properties combined
+      await this.kuzuInstance.createRelTable(
+        'CodeRelationship',
+        'CodeElement',
+        'CodeElement',
+        POLYMORPHIC_RELATIONSHIP_SCHEMA
+      );
+      
+      console.log('✅ Created unified polymorphic relationship table: CodeRelationship (CodeElement -> CodeElement)');
+      
+    } catch (error) {
+      // Table might already exist, which is fine (reuses existing error handling pattern)
+      console.log(`ℹ️ CodeRelationship table might already exist: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Create polymorphic indexes (reuses createIndexes pattern)
+   */
+  private async createPolymorphicIndexes(): Promise<void> {
+    console.log('🔍 Creating polymorphic indexes...');
+
+    for (const indexDef of POLYMORPHIC_INDEX_DEFINITIONS) {
+      if (indexDef.type === 'PRIMARY') {
+        // Primary key indexes are handled during table creation
+        continue;
+      }
+
+      try {
+        // KuzuDB may not support explicit index creation yet, so this is a placeholder
+        console.log(`ℹ️ Polymorphic index on ${indexDef.table}.${indexDef.column} (placeholder)`);
+      } catch (error) {
+        console.log(`ℹ️ Failed to create polymorphic index on ${indexDef.table}.${indexDef.column}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     }
   }
@@ -759,6 +998,84 @@ export function isValidRelationshipConnection(
  */
 export function getAllNodeLabels(): NodeLabel[] {
   return Object.keys(NODE_TABLE_SCHEMAS) as NodeLabel[];
+}
+
+// ============================================================================
+// POLYMORPHIC UTILITIES
+// ============================================================================
+
+/**
+ * Get all possible element types for polymorphic schema
+ * Reuses existing node labels as element types
+ */
+export function getAllElementTypes(): NodeLabel[] {
+  return getAllNodeLabels();  // Reuse existing function
+}
+
+/**
+ * Get polymorphic schema for CodeElement table
+ */
+export function getPolymorphicNodeSchema(): NodeSchema {
+  return POLYMORPHIC_NODE_SCHEMA;
+}
+
+/**
+ * Get polymorphic relationship schemas
+ */
+export function getPolymorphicRelationshipSchemas(): RelationshipTableDefinition[] {
+  return POLYMORPHIC_RELATIONSHIP_SCHEMAS;
+}
+
+/**
+ * Check if a property exists in the polymorphic schema
+ * Reuses existing schema validation patterns
+ */
+export function isValidPolymorphicProperty(property: string): boolean {
+  return property in POLYMORPHIC_NODE_SCHEMA;
+}
+
+/**
+ * Get default value for a property in polymorphic schema
+ * Reuses existing default value logic from CSV generator
+ */
+export function getPolymorphicPropertyDefault(property: string): any {
+  const type = POLYMORPHIC_NODE_SCHEMA[property];
+  if (!type) return null;
+
+  switch (type) {
+    case 'STRING': return '';
+    case 'INT64': return 0;
+    case 'DOUBLE': return 0.0;
+    case 'BOOLEAN': return false;
+    case 'STRING[]': return [];
+    default: return '';
+  }
+}
+
+/**
+ * Get default value for a property in polymorphic relationship schema
+ * Reuses existing default value logic pattern
+ */
+export function getPolymorphicRelationshipPropertyDefault(property: string): any {
+  const type = POLYMORPHIC_RELATIONSHIP_SCHEMA[property];
+  if (!type) return null;
+
+  switch (type) {
+    case 'STRING': return '';
+    case 'INT64': return 0;
+    case 'DOUBLE': return 0.0;
+    case 'BOOLEAN': return false;
+    case 'STRING[]': return [];
+    default: return '';
+  }
+}
+
+/**
+ * Validate element type against known types
+ * Reuses existing node label validation
+ */
+export function isValidElementType(elementType: string): elementType is NodeLabel {
+  return getAllElementTypes().includes(elementType as NodeLabel);
 }
 
 /**

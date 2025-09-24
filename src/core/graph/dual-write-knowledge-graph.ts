@@ -197,44 +197,85 @@ export class DualWriteKnowledgeGraph implements KnowledgeGraph {
 
       // Test query 3: Count nodes by type (KuzuDB-compatible)
       // Query each node table separately since KuzuDB doesn't have labels() function
-      const nodeTypes = ['Function', 'Class', 'Method', 'File', 'Variable', 'Interface', 'Type', 'Import', 'Project', 'Folder'];
-      console.log('📊 KuzuDB Verification - Node types:');
+      // Check if polymorphic nodes are enabled
+      const { isPolymorphicNodesEnabled } = await import('../../config/features.ts');
       
-      for (const nodeType of nodeTypes) {
-        try {
-          const result = await (this.kuzuGraph as any).executeQuery(`MATCH (n:${nodeType}) RETURN COUNT(n) as count`);
-          const count = result.rows?.[0]?.[0] || 0;
-          if (count > 0) {
-            console.log(`  ${nodeType}: ${count} nodes`);
+      if (isPolymorphicNodesEnabled()) {
+        // Polymorphic approach: Query by elementType
+        console.log('📊 KuzuDB Verification - Node types (polymorphic):');
+        const nodeTypes = ['Function', 'Class', 'Method', 'File', 'Variable', 'Interface', 'Type', 'Import', 'Project', 'Folder'];
+        
+        for (const nodeType of nodeTypes) {
+          try {
+            const result = await (this.kuzuGraph as any).executeQuery(`MATCH (n:CodeElement {elementType: '${nodeType}'}) RETURN COUNT(n) as count`);
+            const count = result.rows?.[0]?.[0] || 0;
+            if (count > 0) {
+              console.log(`  ${nodeType}: ${count} nodes`);
+            }
+          } catch (error) {
+            // Skip silently
           }
-        } catch (error) {
-          // Node type might not exist in this database, skip silently
+        }
+      } else {
+        // Traditional approach: Query individual tables
+        console.log('📊 KuzuDB Verification - Node types:');
+        const nodeTypes = ['Function', 'Class', 'Method', 'File', 'Variable', 'Interface', 'Type', 'Import', 'Project', 'Folder'];
+        
+        for (const nodeType of nodeTypes) {
+          try {
+            const result = await (this.kuzuGraph as any).executeQuery(`MATCH (n:${nodeType}) RETURN COUNT(n) as count`);
+            const count = result.rows?.[0]?.[0] || 0;
+            if (count > 0) {
+              console.log(`  ${nodeType}: ${count} nodes`);
+            }
+          } catch (error) {
+            // Node type might not exist in this database, skip silently
+          }
         }
       }
 
       // Test query 4: Count relationships by type (KuzuDB-compatible)
       // Query each relationship table separately since KuzuDB doesn't have type() function
       const relTypes = ['CONTAINS', 'CALLS', 'INHERITS', 'IMPLEMENTS', 'OVERRIDES', 'IMPORTS', 'DEFINES', 'BELONGS_TO', 'USES', 'ACCESSES', 'EXTENDS'];
-      console.log('📊 KuzuDB Verification - Relationship types:');
       
-      for (const relType of relTypes) {
-        try {
-          const result = await (this.kuzuGraph as any).executeQuery(`MATCH ()-[r:${relType}]->() RETURN COUNT(r) as count`);
-          const count = result.rows?.[0]?.[0] || 0;
-          if (count > 0) {
-            console.log(`  ${relType}: ${count} relationships`);
+      if (isPolymorphicNodesEnabled()) {
+        // Polymorphic approach: Query by relationshipType
+        console.log('📊 KuzuDB Verification - Relationship types (polymorphic):');
+        
+        for (const relType of relTypes) {
+          try {
+            const result = await (this.kuzuGraph as any).executeQuery(`MATCH ()-[r:CodeRelationship {relationshipType: '${relType}'}]->() RETURN COUNT(r) as count`);
+            const count = result.rows?.[0]?.[0] || 0;
+            if (count > 0) {
+              console.log(`  ${relType}: ${count} relationships`);
+            }
+          } catch (error) {
+            // Skip silently
           }
-        } catch (error) {
-          // Relationship type might not exist in this database, skip silently
+        }
+      } else {
+        // Traditional approach: Query individual tables
+        console.log('📊 KuzuDB Verification - Relationship types:');
+        
+        for (const relType of relTypes) {
+          try {
+            const result = await (this.kuzuGraph as any).executeQuery(`MATCH ()-[r:${relType}]->() RETURN COUNT(r) as count`);
+            const count = result.rows?.[0]?.[0] || 0;
+            if (count > 0) {
+              console.log(`  ${relType}: ${count} relationships`);
+            }
+          } catch (error) {
+            // Relationship type might not exist in this database, skip silently
+          }
         }
       }
 
       // Test query 5: Sample some actual data
-      const sampleResult = await (this.kuzuGraph as any).executeQuery(`
-        MATCH (f:Function) 
-        RETURN f.name, f.filePath, f.startLine 
-        LIMIT 5
-      `);
+      const sampleQuery = isPolymorphicNodesEnabled() 
+        ? `MATCH (f:CodeElement {elementType: 'Function'}) RETURN f.name, f.filePath, f.startLine LIMIT 5`
+        : `MATCH (f:Function) RETURN f.name, f.filePath, f.startLine LIMIT 5`;
+      
+      const sampleResult = await (this.kuzuGraph as any).executeQuery(sampleQuery);
       
       if (sampleResult.rows && sampleResult.rows.length > 0) {
         console.log('📊 KuzuDB Verification - Sample functions:');

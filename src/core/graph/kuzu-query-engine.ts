@@ -286,6 +286,7 @@ export class KuzuQueryEngine {
       // Use KuzuSchemaManager for complete and correct schema
       const { KuzuSchemaManager } = await import('../kuzu/kuzu-schema.ts');
       const schemaManager = new KuzuSchemaManager(this.kuzuInstance);
+      
       await schemaManager.initializeSchema();
       
       // NOTE: Removed outdated createNodeTables() and createRelationshipTables() methods

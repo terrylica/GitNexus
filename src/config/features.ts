@@ -42,6 +42,10 @@ export function isKuzuCopyEnabled(): boolean {
   return cachedConfig?.features.enableKuzuCopy ?? false;
 }
 
+export function isPolymorphicNodesEnabled(): boolean {
+  return cachedConfig?.features.enablePolymorphicNodes ?? false;
+}
+
 // Processing Features
 export function isParallelParsingEnabled(): boolean {
   return cachedConfig?.features.enableParallelParsing ?? true;
@@ -116,6 +120,7 @@ export function getFeatureFlags() {
       enableKuzuDBPersistence: true,
       enableKuzuDBPerformanceMonitoring: true,
       enableKuzuCopy: false,
+      enablePolymorphicNodes: false,
       enableDebugMode: false,
       enablePerformanceLogging: true,
       enableQueryLogging: false

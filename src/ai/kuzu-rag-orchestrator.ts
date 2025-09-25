@@ -2,7 +2,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { z } from 'zod';
 import { tool } from '@langchain/core/tools';
 import type { LLMService, LLMConfig } from './llm-service.ts';
-import type { KuzuQueryEngine } from '../core/graph/kuzu-query-engine.ts';
+import type { KuzuQueryEngine, KuzuQueryResult } from '../core/graph/kuzu-query-engine.ts';
 import type { KnowledgeGraph } from '../core/graph/types.ts';
 
 import { isKuzuDBEnabled } from '../config/features.ts';
@@ -409,19 +409,21 @@ EXAMPLE POLYMORPHIC QUERIES:
   /**
    * Format KuzuDB query result for observation
    */
-  private formatKuzuQueryResult(result: KuzuQueryResponse): string {
-    const summary = `Found ${result.nodes.length} nodes and ${result.relationships.length} relationships (execution time: ${result.executionTime.toFixed(2)}ms)`;
+  private formatKuzuQueryResult(result: KuzuQueryResult): string {
+    const nodes = result.nodes || [];
+    const relationships = result.relationships || [];
+    const summary = `Found ${nodes.length} nodes and ${relationships.length} relationships (execution time: ${result.executionTime.toFixed(2)}ms)`;
 
-    if (result.nodes.length === 0 && result.relationships.length === 0) {
+    if (nodes.length === 0 && relationships.length === 0) {
       return `${summary}. No results found.`;
     }
 
-    const nodeSummary = result.nodes.length > 0 
-      ? `\nNodes: ${result.nodes.slice(0, 5).map(n => `${n.label}:${n.properties.name || n.id}`).join(', ')}${result.nodes.length > 5 ? '...' : ''}`
+    const nodeSummary = nodes.length > 0 
+      ? `\nNodes: ${nodes.slice(0, 5).map(n => `${n.label}:${n.properties.name || n.id}`).join(', ')}${nodes.length > 5 ? '...' : ''}`
       : '';
     
-    const relSummary = result.relationships.length > 0
-      ? `\nRelationships: ${result.relationships.slice(0, 5).map(r => `${r.type}:${r.source}->${r.target}`).join(', ')}${result.relationships.length > 5 ? '...' : ''}`
+    const relSummary = relationships.length > 0
+      ? `\nRelationships: ${relationships.slice(0, 5).map(r => `${r.type}:${r.source}->${r.target}`).join(', ')}${relationships.length > 5 ? '...' : ''}`
       : '';
 
     return `${summary}${nodeSummary}${relSummary}`;
@@ -478,7 +480,13 @@ EXAMPLE POLYMORPHIC QUERIES:
       return { status: 'KuzuDB not initialized' };
     }
 
-    const dbStats = await this.kuzuQueryEngine.getDatabaseStats();
+    // Get basic database stats
+    const dbStats = {
+      status: 'ready',
+      initialized: this.kuzuQueryEngine.isReady(),
+      timestamp: new Date().toISOString()
+    };
+    
     return {
       kuzuDBStatus: 'ready',
       databaseStats: dbStats,

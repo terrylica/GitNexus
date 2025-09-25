@@ -8,7 +8,6 @@ import WarningDialog from '../../components/WarningDialog';
 import RepositoryInput from '../../components/repository/RepositoryInput';
 import { useGitNexus } from '../../hooks/useGitNexus';
 import { exportAndDownloadGraph, exportAndDownloadGraphAsCSV } from '../../../lib/export';
-import { getFeatureFlags } from '../../../config/features.ts';
 import type { ExportFormat } from '../../components/ExportFormatModal';
 
 /**
@@ -16,7 +15,6 @@ import type { ExportFormat } from '../../components/ExportFormatModal';
  * Uses custom hooks and focused components for better maintainability
  */
 const HomePage: React.FC = () => {
-  const featureFlags = getFeatureFlags();
   const [showNewAnalysisWarning, setShowNewAnalysisWarning] = useState(false);
   const {
     state,
@@ -35,10 +33,11 @@ const HomePage: React.FC = () => {
     if (!state.graph) return;
 
     try {
+      const projectName = 'project'; // You can customize this
       if (format === 'json') {
-        await exportAndDownloadGraph(state.graph, state.fileContents);
+        await exportAndDownloadGraph(state.graph, { projectName }, state.fileContents);
       } else if (format === 'csv') {
-        await exportAndDownloadGraphAsCSV(state.graph, state.fileContents);
+        await exportAndDownloadGraphAsCSV(state.graph, { projectName });
       }
       toggleExportModal();
     } catch (error) {
@@ -279,8 +278,8 @@ const HomePage: React.FC = () => {
             {processing.state.result && (
               <div className="processing-results">
                 <div className="result-stats">
-                  <span>📊 {processing.state.result.graph.getNodes().length} nodes</span>
-                  <span>🔗 {processing.state.result.graph.getRelationships().length} relationships</span>
+                  <span>📊 {processing.state.result.graph.nodes.length} nodes</span>
+                  <span>🔗 {processing.state.result.graph.relationships.length} relationships</span>
                 </div>
               </div>
             )}
@@ -301,14 +300,6 @@ const HomePage: React.FC = () => {
                 <ChatInterface
                   graph={state.graph}
                   fileContents={state.fileContents}
-                  selectedNodeId={state.selectedNodeId}
-                  llmProvider={settings.settings.llmProvider}
-                  llmApiKey={settings.settings.llmApiKey}
-                  azureConfig={{
-                    endpoint: settings.settings.azureOpenAIEndpoint,
-                    deploymentName: settings.settings.azureOpenAIDeploymentName,
-                    apiVersion: settings.settings.azureOpenAIApiVersion
-                  }}
                 />
               </div>
             )}
@@ -319,9 +310,8 @@ const HomePage: React.FC = () => {
               <GraphExplorer
                 graph={state.graph}
                 fileContents={state.fileContents}
-                selectedNodeId={state.selectedNodeId}
                 onNodeSelect={handleNodeSelect}
-                showStats={state.showStats}
+                isLoading={processing.state.isProcessing}
               />
             )}
           </main>
@@ -329,10 +319,10 @@ const HomePage: React.FC = () => {
 
         {state.showExportModal && state.graph && (
           <ExportFormatModal
-            onExport={handleExport}
+            isOpen={state.showExportModal}
+            onSelectFormat={handleExport}
             onClose={toggleExportModal}
-            nodeCount={state.graph.nodes.length}
-            relationshipCount={state.graph.relationships.length}
+            projectName="project"
           />
         )}
 

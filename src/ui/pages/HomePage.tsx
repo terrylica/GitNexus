@@ -26,6 +26,8 @@ interface AppState {
   // Input State
   directoryFilter: string;
   fileExtensions: string;
+  githubUrl: string;
+  githubToken: string;
   
   // Processing State
   isProcessing: boolean;
@@ -52,6 +54,8 @@ const initialState: AppState = {
   showExportModal: false,
   directoryFilter: 'src,lib,components,pages,utils',
   fileExtensions: '.ts,.tsx,.js,.jsx,.py,.java,.cpp,.c,.cs,.php,.rb,.go,.rs,.swift,.kt,.scala,.clj,.hs,.ml,.fs,.elm,.dart,.lua,.r,.m,.sh,.sql,.html,.css,.scss,.less,.vue,.svelte',
+  githubUrl: '',
+  githubToken: localStorage.getItem('github_token') || '',
   isProcessing: false,
   progress: '',
   error: '',
@@ -493,7 +497,7 @@ const HomePage: React.FC = () => {
         )}
 
         <RepositoryInput
-          onZipFileSubmit={(file) => handleFileUpload({ target: { files: [file] } } as any)}
+          onZipFileSubmit={(file) => handleFileUpload({ target: { files: [file] } } as unknown as React.ChangeEvent<HTMLInputElement>)}
           disabled={state.isProcessing}
         />
 

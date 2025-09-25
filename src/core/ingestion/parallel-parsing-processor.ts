@@ -380,7 +380,7 @@ export interface ParallelParsingResult {
 
 		// Add additional relationships like single-threaded version
 		if (definition.extends && definition.extends.length > 0) {
-			definition.extends.forEach(() => {
+			definition.extends.forEach((extendedClass) => {
 			const extendsRelationship: GraphRelationship = { 
 				id: generateDeterministicId('extends', `${nodeId}-${extendedClass}`),
 				type: 'EXTENDS' as RelationshipType,
@@ -394,7 +394,7 @@ export interface ParallelParsingResult {
 		}
 
 		if (definition.implements && definition.implements.length > 0) {
-			definition.implements.forEach(() => {
+			definition.implements.forEach((implementedInterface) => {
 			const implementsRelationship: GraphRelationship = {
 				id: generateDeterministicId('implements', `${nodeId}-${implementedInterface}`),
 				type: 'IMPLEMENTS' as RelationshipType,
@@ -478,11 +478,9 @@ export interface ParallelParsingResult {
 		}
 
 		// Apply centralized ignore patterns
-		const beforeIgnoreFilter = filtered.length;
 		filtered = ignoreService.filterPaths(filtered);
 
 		// Apply content filter (only exclude truly empty files)
-		const beforeContentFilter = filtered.length;
 		const emptyFiles: string[] = [];
 		filtered = filtered.filter(path => {
 			const content = fileContents.get(path);

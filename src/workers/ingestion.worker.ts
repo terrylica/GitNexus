@@ -3,6 +3,7 @@ import { GraphPipeline, type PipelineInput } from '../core/ingestion/pipeline.ts
 import { ParallelGraphPipeline } from '../core/ingestion/parallel-pipeline.ts';
 import { isParallelParsingEnabled } from '../config/features.ts';
 import type { KnowledgeGraph, GraphNode, GraphRelationship } from '../core/graph/types.ts';
+import { ignoreService } from '../config/ignore-service.js';
 
 export interface IngestionProgress {
   phase: 'structure' | 'parsing' | 'calls' | 'complete';
@@ -50,6 +51,13 @@ export class IngestionWorker {
     const startTime = Date.now();
     
     try {
+      // Ensure ignore patterns are loaded in the worker before any processing starts
+      try {
+        await ignoreService.initialize();
+      } catch (e) {
+        console.warn('IngestionWorker: IgnoreService initialization failed, proceeding with defaults', e);
+      }
+
       console.log('IngestionWorker: Starting processing with', input.filePaths.length, 'files');
       
       // Memory optimization: Create a copy of file contents and clear originals gradually

@@ -65,35 +65,78 @@ export class ZipService {
     console.log(`Starting complete ZIP extraction of: ${file.name} (${file.size} bytes)`);
 
     try {
+      // Ensure ignore patterns are initialized so we can prune early
+      try {
+        await ignoreService.initialize();
+      } catch (e) {
+        console.warn('ZipService: IgnoreService initialization failed, proceeding with defaults', e);
+      }
+
       const zip = await JSZip.loadAsync(file);
       const allPaths: string[] = [];
       const fileContents: Map<string, string> = new Map();
       const directories: Set<string> = new Set();
       let totalExtractedSize = 0;
+      const ignoredPrefixes: Set<string> = new Set();
+
+      const isUnderIgnored = (p: string) => {
+        for (const pref of ignoredPrefixes) {
+          if (p === pref || p.startsWith(pref + '/')) return true;
+        }
+        return false;
+      };
 
       // First pass: collect all paths and identify directories
       zip.forEach((relativePath, zipObject) => {
         // Normalize path separators
         const normalizedPath = relativePath.replace(/\\/g, '/');
         
-        // Add all parent directories
+        // Early prune anything under an ignored prefix
+        if (isUnderIgnored(normalizedPath)) {
+          return;
+        }
+
+        // Add all parent directories, pruning ignored ones early
         const pathParts = normalizedPath.split('/');
         for (let i = 1; i < pathParts.length; i++) {
           const dirPath = pathParts.slice(0, i).join('/');
-          if (dirPath && !directories.has(dirPath)) {
+          if (!dirPath) continue;
+
+          if (isUnderIgnored(dirPath)) {
+            return; // whole path is under an ignored dir
+          }
+
+          // If this directory itself is ignored, add to ignoredPrefixes and stop adding deeper paths
+          if (ignoreService.shouldIgnoreDirectory(dirPath) || ignoreService.shouldIgnorePath(dirPath)) {
+            ignoredPrefixes.add(dirPath);
+            return;
+          }
+
+          if (!directories.has(dirPath)) {
             directories.add(dirPath);
             allPaths.push(dirPath);
           }
         }
 
-        // Add the current path
-        if (!allPaths.includes(normalizedPath)) {
-          allPaths.push(normalizedPath);
+        // Handle the current entry
+        if (zipObject.dir) {
+          const dirPath = normalizedPath.replace(/\/$/, '');
+          if (ignoreService.shouldIgnoreDirectory(dirPath) || ignoreService.shouldIgnorePath(dirPath)) {
+            ignoredPrefixes.add(dirPath);
+            return;
+          }
+          if (!allPaths.includes(dirPath)) {
+            allPaths.push(dirPath);
+          }
+          directories.add(dirPath);
+          return;
         }
 
-        // If it's a directory entry, mark it
-        if (zipObject.dir) {
-          directories.add(normalizedPath.replace(/\/$/, ''));
+        // It's a file: only include if not ignored
+        if (!ignoreService.shouldIgnorePath(normalizedPath)) {
+          if (!allPaths.includes(normalizedPath)) {
+            allPaths.push(normalizedPath);
+          }
         }
       });
 
@@ -108,8 +151,8 @@ export class ZipService {
           return;
         }
 
-        // Skip .git files and other unwanted files during content extraction
-        if (this.shouldSkipFileForContent(normalizedPath)) {
+        // Skip ignored files and anything under ignored prefixes during content extraction
+        if (isUnderIgnored(normalizedPath) || this.shouldSkipFileForContent(normalizedPath)) {
           // Reduced logging - only log summary at the end
           return;
         }

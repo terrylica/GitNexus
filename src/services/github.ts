@@ -262,9 +262,7 @@ export class GitHubService {
     return !ignoreService.shouldIgnorePath(path);
   }
 
-  private shouldSkipFileForContent(path: string): boolean {
-    return ignoreService.shouldIgnorePath(path);
-  }
+  // Removed unused method shouldSkipFileForContent since early pruning now avoids fetching ignored files
 
   public async getAllPathsRecursively(owner: string, repo: string, path: string = ''): Promise<string[]> {
     const allPaths: string[] = [];
@@ -304,6 +302,13 @@ export class GitHubService {
    * This is the new robust method that discovers structure first, then filters during parsing
    */
   public async getCompleteRepositoryStructure(owner: string, repo: string): Promise<CompleteRepositoryStructure> {
+    // Ensure ignore patterns are initialized before traversal so we can prune early
+    try {
+      await ignoreService.initialize();
+    } catch (e) {
+      console.warn('GitHubService: IgnoreService initialization failed, proceeding with defaults', e);
+    }
+
     const allPaths: string[] = [];
     const fileContents: Map<string, string> = new Map();
 
@@ -329,25 +334,34 @@ export class GitHubService {
 
       for (const item of contents) {
         const fullPath = item.path;
-        allPaths.push(fullPath);
+
+        if (item.type === 'dir') {
+          // Early prune ignored directories (e.g., .venv, node_modules, .git)
+          if (this.shouldSkipDirectory(fullPath)) {
+            // console.log(`Pruned directory: ${fullPath}`);
+            continue;
+          }
+
+          // Track visible directory and recurse
+          allPaths.push(fullPath);
+          await this.collectPathsAndContent(owner, repo, fullPath, allPaths, fileContents);
+          continue;
+        }
 
         if (item.type === 'file') {
-          // Always try to get content for files, but skip unwanted files like .git files
-          // Filtering will happen later in ParsingProcessor, but we can skip obvious files
-          if (this.shouldSkipFileForContent(fullPath)) {
-            // Reduced logging to avoid console spam
-          } else {
+          // Only include files that are not ignored
+          if (this.shouldIncludeFile(fullPath)) {
+            allPaths.push(fullPath);
             try {
               const content = await this.getFileContent(owner, repo, fullPath);
               fileContents.set(fullPath, content);
             } catch (error) {
               console.warn(`Failed to get content for ${fullPath}:`, error);
             }
+          } else {
+            // Skipped ignored file
+            // console.log(`Pruned file: ${fullPath}`);
           }
-        } else if (item.type === 'dir') {
-          // REMOVED: shouldSkipDirectory check for complete structure discovery
-          // All directories are now discovered, filtering happens during parsing
-          await this.collectPathsAndContent(owner, repo, fullPath, allPaths, fileContents);
         }
       }
     } catch (error) {

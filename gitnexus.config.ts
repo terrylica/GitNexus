@@ -150,6 +150,7 @@ export interface GitNexusConfig {
     enableWebWorkers: boolean;
     enableBatchProcessing: boolean;
     enableKuzuCopy: boolean;
+    enablePolymorphicNodes: boolean;
     enableCaching: boolean;
     enableWorkerPool: boolean;
     enableParallelParsing: boolean;
@@ -286,7 +287,7 @@ const config: GitNexusConfig = {
     suffixes: ['.tmp', '~', '.bak', '.swp', '.swo'],
     fileExtensions: [
       // Compiled/Binary
-      '.pyc', '.pyo', '.pyd', '.so', '.dll', '.exe', '.jar', '.war', '.ear',
+      '.pyc', '.pyo', '.pyd', '.so', '.dll', '.exe', '.jar', '.war', '.ear', '.wasm',
       // Archives
       '.zip', '.tar', '.rar', '.7z', '.gz',
       // Media

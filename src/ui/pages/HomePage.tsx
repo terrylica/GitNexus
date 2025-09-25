@@ -2,8 +2,9 @@ import React, { useState, useCallback, useEffect } from 'react';
 import ErrorBoundary from '../components/ErrorBoundary.tsx';
 import { GraphExplorer } from '../components/graph/index.ts';
 import { ChatInterface } from '../components/chat/index.ts';
-
+import WarningDialog from '../components/WarningDialog.tsx';
 import ExportFormatModal from '../components/ExportFormatModal.tsx';
+import RepositoryInput from '../components/repository/RepositoryInput.tsx';
 import type { KnowledgeGraph } from '../../core/graph/types.ts';
 import { IngestionService } from '../../services/ingestion.service.ts';
 import { LLMService, type LLMProvider } from '../../ai/llm-service.ts';
@@ -23,7 +24,6 @@ interface AppState {
   showExportModal: boolean;
   
   // Input State
-  githubUrl: string;
   directoryFilter: string;
   fileExtensions: string;
   
@@ -39,8 +39,6 @@ interface AppState {
   azureOpenAIEndpoint: string;
   azureOpenAIDeploymentName: string;
   azureOpenAIApiVersion: string;
-  // GitHub settings
-  githubToken: string;
   showSettings: boolean;
 }
 
@@ -52,7 +50,6 @@ const initialState: AppState = {
   isLoading: false,
   showStats: false,
   showExportModal: false,
-  githubUrl: '',
   directoryFilter: 'src,lib,components,pages,utils',
   fileExtensions: '.ts,.tsx,.js,.jsx,.py,.java,.cpp,.c,.cs,.php,.rb,.go,.rs,.swift,.kt,.scala,.clj,.hs,.ml,.fs,.elm,.dart,.lua,.r,.m,.sh,.sql,.html,.css,.scss,.less,.vue,.svelte',
   isProcessing: false,
@@ -63,12 +60,12 @@ const initialState: AppState = {
   azureOpenAIEndpoint: localStorage.getItem('azure_openai_endpoint') || '',
   azureOpenAIDeploymentName: localStorage.getItem('azure_openai_deployment') || '',
   azureOpenAIApiVersion: localStorage.getItem('azure_openai_api_version') || '2024-02-01',
-  githubToken: localStorage.getItem('github_token') || '',
   showSettings: false
 };
 
 const HomePage: React.FC = () => {
   const [state, setState] = useState<AppState>(initialState);
+  const [showNewProjectWarning, setShowNewProjectWarning] = useState(false);
   const [services] = useState(() => ({
     ingestion: new IngestionService(),
     llm: new LLMService()
@@ -148,63 +145,27 @@ const HomePage: React.FC = () => {
     }
   };
 
-  const handleGitHubProcess = async () => {
-    if (!state.githubUrl.trim()) {
-      updateState({ error: 'Please enter a GitHub repository URL' });
-      return;
-    }
 
-    try {
-      updateState({ 
-        isProcessing: true, 
-        error: '', 
-        progress: 'Fetching repository...',
-        showWelcome: false
-      });
-
-      console.log('Starting GitHub processing...', state.githubUrl);
-
-      // Create ingestion service with GitHub token if provided
-      const ingestionService = new IngestionService(state.githubToken || undefined);
-
-      const result = await ingestionService.processGitHubRepo(state.githubUrl, {
-        directoryFilter: state.directoryFilter,
-        fileExtensions: state.fileExtensions,
-        onProgress: (progress) => {
-          console.log('Progress:', progress);
-          updateState({ progress });
-        }
-      });
-
-      console.log('GitHub processing completed:', {
-        nodeCount: result.graph?.nodes?.length || 0,
-        relationshipCount: result.graph?.relationships?.length || 0,
-        fileCount: result.fileContents?.size || 0
-      });
-
-      updateState({
-        graph: result.graph,
-        fileContents: result.fileContents,
-        isProcessing: false,
-        progress: '',
-        showWelcome: false // Ensure we stay in main interface
-      });
-    } catch (error) {
-      console.error('GitHub processing error:', error);
-      updateState({
-        error: error instanceof Error ? error.message : 'Failed to process repository',
-        isProcessing: false,
-        progress: '',
-        showWelcome: true // Return to welcome screen on error
-      });
+  const handleNewProject = () => {
+    // Show warning dialog if there's existing data
+    if (state.graph && (state.graph.nodes.length > 0 || state.graph.relationships.length > 0)) {
+      setShowNewProjectWarning(true);
+    } else {
+      // No data to lose, proceed directly
+      performNewProject();
     }
   };
 
-  const handleNewProject = () => {
+  const performNewProject = () => {
     updateState({
       ...initialState,
       showStats: false
     });
+    setShowNewProjectWarning(false);
+  };
+
+  const cancelNewProject = () => {
+    setShowNewProjectWarning(false);
   };
 
   const handleDownloadGraph = () => {
@@ -266,23 +227,23 @@ const HomePage: React.FC = () => {
   })();
   const isGraphValid = state.graph && state.graph.nodes && Array.isArray(state.graph.nodes) && state.graph.relationships && Array.isArray(state.graph.relationships);
 
-  // Warm tone color palette
+  // Orange-Yellow tone color palette
   const colors = {
     background: '#FDF6E3', // Warm cream
     surface: '#FFFFFF',
-    surfaceWarm: '#FEF9F0', // Slightly warm white
-    primary: '#D97706', // Warm orange
-    primaryLight: '#F59E0B', // Light orange
-    secondary: '#92400E', // Dark orange
-    accent: '#DC2626', // Warm red
-    text: '#451A03', // Dark brown
-    textSecondary: '#78350F', // Medium brown
-    textMuted: '#A16207', // Light brown
-    border: '#FED7AA', // Light orange
-    borderLight: '#FEF3C7', // Very light orange
-    success: '#059669', // Warm green
-    warning: '#D97706', // Orange
-    error: '#DC2626' // Red
+    surfaceWarm: '#FFF8F0', // Warm white with orange tint
+    primary: '#ff9a56', // Orange
+    primaryLight: '#ffad56', // Light orange
+    secondary: '#ffc947', // Yellow
+    accent: '#ff8c42', // Bright orange
+    text: '#8B4513', // Saddle brown
+    textSecondary: '#A0522D', // Sienna
+    textMuted: '#CD853F', // Peru
+    border: '#FFD4A3', // Light orange
+    borderLight: '#FFF2E6', // Very light orange
+    success: '#32CD32', // Lime green
+    warning: '#ff9a56', // Orange
+    error: '#FF6347' // Tomato red
   };
 
   // Modern styles with warm theme
@@ -303,7 +264,7 @@ const HomePage: React.FC = () => {
       alignItems: 'center',
       justifyContent: 'center',
       padding: '12px 24px',
-      backgroundColor: colors.surface,
+      background: colors.background,
       borderBottom: `1px solid ${colors.borderLight}`,
       boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
       position: 'relative' as const
@@ -315,7 +276,7 @@ const HomePage: React.FC = () => {
       gap: '16px',
       fontSize: '14px',
       fontWeight: '500',
-      color: colors.textSecondary
+      color: 'white'
     },
 
     navbarButton: {
@@ -340,7 +301,7 @@ const HomePage: React.FC = () => {
       left: 0,
       right: 0,
       bottom: 0,
-      backgroundColor: colors.background,
+      background: colors.background,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -531,95 +492,10 @@ const HomePage: React.FC = () => {
           </div>
         )}
 
-        <div style={styles.inputSection}>
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>GitHub Repository URL</label>
-            <input
-              type="text"
-              value={state.githubUrl}
-              onChange={(e) => updateState({ githubUrl: e.target.value })}
-              placeholder="https://github.com/owner/repo"
-              style={styles.input}
-              disabled={state.isProcessing}
-            />
-            
-            {/* GitHub Token Input - Optional */}
-            <div style={{ marginTop: '12px' }}>
-              <label style={{...styles.label, color: colors.textMuted}}>
-                GitHub Personal Access Token (Optional)
-              </label>
-              <input
-                type="password"
-                value={state.githubToken}
-                onChange={(e) => updateState({ githubToken: e.target.value })}
-                placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                style={{
-                  ...styles.input,
-                  borderColor: colors.borderLight,
-                  backgroundColor: colors.surface
-                }}
-                disabled={state.isProcessing}
-              />
-              <div style={{ 
-                fontSize: '11px', 
-                color: colors.textMuted, 
-                marginTop: '4px',
-                lineHeight: '1.4'
-              }}>
-                Increases rate limit from 60 to 5,000 requests/hour. 
-                <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" 
-                   style={{ color: colors.primary, textDecoration: 'none', marginLeft: '4px' }}>
-                  Generate token
-                </a>
-              </div>
-            </div>
-            
-            {/* GitHub Token Status */}
-            <div style={{
-              fontSize: '12px',
-              color: state.githubToken ? colors.success : colors.textMuted,
-              marginTop: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}>
-              <span>{state.githubToken ? '🔑' : '⚠️'}</span>
-              {state.githubToken 
-                ? 'GitHub token configured (5,000 requests/hour)' 
-                : 'No GitHub token (60 requests/hour limit)'}
-            </div>
-            
-            <button
-              onClick={handleGitHubProcess}
-              disabled={state.isProcessing || !state.githubUrl.trim()}
-              style={{
-                ...styles.primaryButton,
-                opacity: state.isProcessing || !state.githubUrl.trim() ? 0.5 : 1,
-                marginTop: '16px'
-              }}
-            >
-              <span>📊</span>
-              Analyze Repository
-            </button>
-          </div>
-
-          <div style={styles.orDivider}>
-            <div style={styles.orLine}></div>
-            <span>OR</span>
-            <div style={styles.orLine}></div>
-          </div>
-
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Upload ZIP File</label>
-            <input
-              type="file"
-              accept=".zip"
-              onChange={handleFileUpload}
-              disabled={state.isProcessing}
-              style={styles.input}
-            />
-          </div>
-        </div>
+        <RepositoryInput
+          onZipFileSubmit={(file) => handleFileUpload({ target: { files: [file] } } as any)}
+          disabled={state.isProcessing}
+        />
 
         <button
           onClick={() => updateState({ showSettings: true })}
@@ -1151,6 +1027,20 @@ const HomePage: React.FC = () => {
             ? state.githubUrl.split('/').pop()?.replace('.git', '') || 'repository'
             : 'project'
           }
+        />
+
+        {/* New Project Warning Dialog */}
+        <WarningDialog
+          isOpen={showNewProjectWarning}
+          title="Start New Project"
+          message="Starting a new project will permanently delete your current knowledge graph and all analyzed data. This action cannot be undone. Are you sure you want to continue?
+
+Don't worry though - you can always re-upload your previous ZIP file if needed. It only takes a few seconds! 😊"
+          confirmText="Yes, Start New Project"
+          cancelText="Cancel"
+          variant="warning"
+          onConfirm={performNewProject}
+          onCancel={cancelNewProject}
         />
       </div>
     </ErrorBoundary>

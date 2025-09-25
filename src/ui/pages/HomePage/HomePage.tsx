@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import ErrorBoundary from '../../components/ErrorBoundary';
 import { GraphExplorer } from '../../components/graph';
 import { ChatInterface } from '../../components/chat';
 import ExportFormatModal from '../../components/ExportFormatModal';
+import WarningDialog from '../../components/WarningDialog';
 // Engine components removed - using simplified parsing mode toggle
 import RepositoryInput from '../../components/repository/RepositoryInput';
 import { useGitNexus } from '../../hooks/useGitNexus';
@@ -16,22 +17,17 @@ import type { ExportFormat } from '../../components/ExportFormatModal';
  */
 const HomePage: React.FC = () => {
   const featureFlags = getFeatureFlags();
+  const [showNewAnalysisWarning, setShowNewAnalysisWarning] = useState(false);
   const {
     state,
     processing,
     settings,
     handleNodeSelect,
-    handleGitHubProcess,
     handleZipProcess,
     toggleStats,
     toggleExportModal,
     setShowWelcome
   } = useGitNexus();
-
-  const handleGitHubUrlChange = (url: string) => {
-    // URL changes are handled locally in the component
-    // Could be extracted to settings if needed for persistence
-  };
 
   // Engine change handler removed - parsing mode controlled via .env
 
@@ -52,8 +48,23 @@ const HomePage: React.FC = () => {
   };
 
   const handleClearResults = () => {
+    // Show warning dialog if there's existing data
+    if (state.graph && (state.graph.nodes.length > 0 || state.graph.relationships.length > 0)) {
+      setShowNewAnalysisWarning(true);
+    } else {
+      // No data to lose, proceed directly
+      performNewAnalysis();
+    }
+  };
+
+  const performNewAnalysis = () => {
     processing.clearResult();
     setShowWelcome(true);
+    setShowNewAnalysisWarning(false);
+  };
+
+  const cancelNewAnalysis = () => {
+    setShowNewAnalysisWarning(false);
   };
 
   // Show welcome screen if no graph and not processing
@@ -72,11 +83,8 @@ const HomePage: React.FC = () => {
           </div>
 
           <RepositoryInput
-            onGitHubSubmit={handleGitHubProcess}
             onZipFileSubmit={handleZipProcess}
             disabled={processing.state.isProcessing}
-            githubUrl="" // Local state in component
-            onGitHubUrlChange={handleGitHubUrlChange}
           />
 
           {/* Engine selector removed - parsing mode controlled via .env */}
@@ -87,7 +95,7 @@ const HomePage: React.FC = () => {
         <style>{`
           .app {
             min-height: 100vh;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #ff9a56 0%, #ffad56 50%, #ffc947 100%);
             padding: 2rem;
           }
           
@@ -447,6 +455,20 @@ const HomePage: React.FC = () => {
             }
           }
         `}</style>
+
+        {/* New Analysis Warning Dialog */}
+        <WarningDialog
+          isOpen={showNewAnalysisWarning}
+          title="Start New Analysis"
+          message="Starting a new analysis will permanently delete your current knowledge graph and all analyzed data. This action cannot be undone. Are you sure you want to continue?
+
+Chill though - you can always re-upload your previous ZIP file if you change your mind. It only takes a few seconds! 🚀"
+          confirmText="Yes, Start New Analysis"
+          cancelText="Cancel"
+          variant="warning"
+          onConfirm={performNewAnalysis}
+          onCancel={cancelNewAnalysis}
+        />
       </div>
     </ErrorBoundary>
   );

@@ -2,6 +2,7 @@ import { GitHubService, type CompleteRepositoryStructure } from './github.ts';
 import { ZipService, type CompleteZipStructure } from './zip.ts';
 import { getIngestionWorker } from '../lib/workerUtils.ts';
 import type { KnowledgeGraph } from '../core/graph/types.ts';
+import { databaseResetService } from './database-reset.service.ts';
 
 export interface IngestionOptions {
   directoryFilter?: string;
@@ -28,6 +29,9 @@ export class IngestionService {
     options: IngestionOptions = {}
   ): Promise<IngestionResult> {
     const { onProgress } = options;
+
+    // Reset database for fresh start
+    await databaseResetService.resetDatabase({ onProgress });
 
     // Parse GitHub URL
     const match = githubUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)(?:\/.*)?$/);
@@ -90,6 +94,9 @@ export class IngestionService {
     options: IngestionOptions = {}
   ): Promise<IngestionResult> {
     const { onProgress } = options;
+
+    // Reset database for fresh start
+    await databaseResetService.resetDatabase({ onProgress });
 
     onProgress?.('Discovering complete ZIP structure...');
 

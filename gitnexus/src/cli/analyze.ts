@@ -275,4 +275,9 @@ export const analyzeCommand = async (
   }
 
   console.log('');
+
+  // Force clean exit to prevent segfault from native addon destructors
+  // (onnxruntime-node, tree-sitter, KuzuDB) crashing during Node.js GC teardown.
+  // All work is complete at this point, so there is no functional difference.
+  process.exit(0);
 };
